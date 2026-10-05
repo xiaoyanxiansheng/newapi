@@ -26,15 +26,15 @@ import { useTheme } from '@/context/theme-provider'
 import { isLikelyHtml } from '@/lib/content-format'
 import { useAuthStore } from '@/stores/auth-store'
 
-import { CTA, Features, Hero, HowItWorks, Stats } from './components'
+import { HwjaiLanding } from './components/hwjai-landing'
+import { HwjaiMark } from './components/hwjai-mark'
 import { useHomePageContent } from './hooks'
 
 export function Home() {
   const { i18n, t } = useTranslation()
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const { resolvedTheme } = useTheme()
-  const { auth } = useAuthStore()
-  const isAuthenticated = !!auth.user
+  const isAuthenticated = useAuthStore((state) => !!state.auth.user)
   const { content, isLoaded, isUrl } = useHomePageContent()
 
   const syncIframePreferences = useCallback(() => {
@@ -121,12 +121,13 @@ export function Home() {
   }
 
   return (
-    <PublicLayout showMainContainer={false}>
-      <Hero isAuthenticated={isAuthenticated} />
-      <Stats />
-      <Features />
-      <HowItWorks />
-      <CTA isAuthenticated={isAuthenticated} />
+    <PublicLayout
+      showMainContainer={false}
+      siteName='hwjai'
+      logo={<HwjaiMark />}
+      showAuthButtons={isAuthenticated}
+    >
+      <HwjaiLanding />
       <Footer />
     </PublicLayout>
   )

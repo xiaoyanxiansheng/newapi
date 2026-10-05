@@ -221,7 +221,7 @@ export function DataTableRowActions<TData>({
               size='icon-sm'
               onClick={() => {
                 setCurrentRow(apiKey)
-                setOpen('update')
+                setOpen('routes')
               }}
               aria-label={t('Edit')}
             />

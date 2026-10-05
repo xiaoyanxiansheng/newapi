@@ -127,3 +127,45 @@ func getDefaultVendorIcon(vendorName string) string {
 	}
 	return ""
 }
+
+const (
+	VendorRegionOverseas = "intl"
+	VendorRegionChina    = "cn"
+)
+
+var defaultVendorRegions = map[string]string{
+	"OpenAI":     VendorRegionOverseas,
+	"Anthropic":  VendorRegionOverseas,
+	"Google":     VendorRegionOverseas,
+	"Cohere":     VendorRegionOverseas,
+	"Cloudflare": VendorRegionOverseas,
+	"Jina":       VendorRegionOverseas,
+	"Mistral":    VendorRegionOverseas,
+	"xAI":        VendorRegionOverseas,
+	"Meta":       VendorRegionOverseas,
+	"微软":         VendorRegionOverseas,
+	"Microsoft":  VendorRegionOverseas,
+	"Azure":      VendorRegionOverseas,
+	"Moonshot":   VendorRegionChina,
+	"智谱":         VendorRegionChina,
+	"阿里巴巴":       VendorRegionChina,
+	"DeepSeek":   VendorRegionChina,
+	"MiniMax":    VendorRegionChina,
+	"百度":         VendorRegionChina,
+	"讯飞":         VendorRegionChina,
+	"腾讯":         VendorRegionChina,
+	"360":        VendorRegionChina,
+	"零一万物":       VendorRegionChina,
+	"字节跳动":       VendorRegionChina,
+	"快手":         VendorRegionChina,
+	"即梦":         VendorRegionChina,
+	"Vidu":       VendorRegionChina,
+}
+
+// EffectiveVendorRegion returns the configured region, or a name based default when none was set.
+func EffectiveVendorRegion(v *Vendor) string {
+	if v.Region == VendorRegionOverseas || v.Region == VendorRegionChina {
+		return v.Region
+	}
+	return defaultVendorRegions[v.Name]
+}

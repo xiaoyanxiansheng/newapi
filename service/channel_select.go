@@ -84,6 +84,10 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 	var channel *model.Channel
 	var err error
 	selectGroup := param.TokenGroup
+	if IsRouteMode(param.Ctx) {
+		channel, err = SelectRouteChannel(param.Ctx, param.ModelName)
+		return channel, "default", err
+	}
 	userGroup := common.GetContextKeyString(param.Ctx, constant.ContextKeyUserGroup)
 
 	if param.TokenGroup == "auto" {

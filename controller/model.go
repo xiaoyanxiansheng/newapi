@@ -240,6 +240,9 @@ func ListModels(c *gin.Context, modelType int) {
 		}
 	}
 	models := service.GetGroupsEnabledModels(ownerGroups)
+	if service.IsRouteMode(c) {
+		models = service.GetRouteModels(c)
+	}
 	for _, modelName := range models {
 		if modelLimitEnable {
 			matchingName := ratio_setting.FormatMatchingModelName(modelName)

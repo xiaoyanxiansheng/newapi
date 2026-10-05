@@ -39,6 +39,12 @@ const (
 	ContextKeyChannelMultiKeyIndex     ContextKey = "channel_multi_key_index"
 	ContextKeyChannelKey               ContextKey = "channel_key"
 
+	ContextKeyTokenRoutes          ContextKey = "token_routes"
+	ContextKeyTokenAutoRoute       ContextKey = "token_auto_route"
+	ContextKeyRouteRatio           ContextKey = "route_ratio"
+	ContextKeyRoutePreConsumeRatio ContextKey = "route_preconsume_ratio"
+	ContextKeyRouteMaxRetry        ContextKey = "route_max_retry"
+
 	ContextKeyAutoGroup           ContextKey = "auto_group"
 	ContextKeyAutoGroupIndex      ContextKey = "auto_group_index"
 	ContextKeyAutoGroupRetryIndex ContextKey = "auto_group_retry_index"

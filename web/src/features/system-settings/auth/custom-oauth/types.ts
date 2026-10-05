@@ -77,6 +77,11 @@ export const customOAuthFormSchema = z.object({
   access_denied_message: z.string().optional().default(''),
 })
 
+export const customOAuthCreateFormSchema = customOAuthFormSchema.refine(
+  (values) => values.client_secret.trim().length > 0,
+  { path: ['client_secret'], message: 'Client Secret is required' }
+)
+
 export type CustomOAuthFormValues = z.infer<typeof customOAuthFormSchema>
 
 // ============================================================================
@@ -114,9 +119,38 @@ export interface OAuthPreset {
   display_name_field: string
   email_field: string
   needsBaseUrl: boolean
+  well_known?: string
+  auth_style?: number
+  access_policy?: string
+  enabled?: boolean
 }
 
 export const OAUTH_PRESETS: OAuthPreset[] = [
+  {
+    key: 'google',
+    name: 'Google',
+    icon: 'google',
+    authorization_endpoint: 'https://accounts.google.com/o/oauth2/v2/auth',
+    token_endpoint: 'https://oauth2.googleapis.com/token',
+    user_info_endpoint: 'https://openidconnect.googleapis.com/v1/userinfo',
+    scopes: 'openid email profile',
+    user_id_field: 'sub',
+    username_field: '',
+    display_name_field: 'name',
+    email_field: 'email',
+    needsBaseUrl: false,
+    well_known: 'https://accounts.google.com/.well-known/openid-configuration',
+    auth_style: 1,
+    access_policy: JSON.stringify(
+      {
+        logic: 'and',
+        conditions: [{ field: 'email_verified', op: 'eq', value: true }],
+      },
+      null,
+      2
+    ),
+    enabled: false,
+  },
   {
     key: 'github-enterprise',
     name: 'GitHub Enterprise',

@@ -11,6 +11,10 @@ logs
 web/dist
 web/node_modules
 .env
+.env.*
+admin-credentials.txt
+*.log
+.tools/
 one-api
 new-api
 /__debug_bin*

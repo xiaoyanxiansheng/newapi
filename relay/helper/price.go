@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
@@ -53,6 +54,14 @@ func HandleGroupRatio(ctx *gin.Context, relayInfo *relaycommon.RelayInfo) hostty
 	if exists {
 		logger.LogDebug(ctx, "final group: %s", autoGroup)
 		relayInfo.UsingGroup = autoGroup.(string)
+	}
+
+	// token routes price per (channel, model); the group ratio no longer applies
+	if v, ok := common.GetContextKey(ctx, constant.ContextKeyRouteRatio); ok {
+		if routeRatio, ok := v.(float64); ok && routeRatio > 0 {
+			groupRatioInfo.GroupRatio = routeRatio
+			return groupRatioInfo
+		}
 	}
 
 	// check user group special ratio

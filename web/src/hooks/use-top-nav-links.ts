@@ -22,6 +22,7 @@ import { useTranslation } from 'react-i18next'
 import { useStatus } from '@/hooks/use-status'
 import { parseHeaderNavModulesFromStatus } from '@/lib/nav-modules'
 import { useAuthStore } from '@/stores/auth-store'
+import { getPluginTopNavLinks } from '@/plugins/manifest'
 
 export type TopNavLink = {
   title: string
@@ -75,9 +76,14 @@ export function useTopNavLinks(): TopNavLink[] {
   // Pricing
   const pricing = modules?.pricing
   if (pricing && typeof pricing === 'object' && pricing.enabled) {
-    const requiresAuth = pricing.requireAuth && !isAuthed
-    links.push({ title: t('Model Square'), href: '/pricing', requiresAuth })
+    links.push({
+      title: t('Model Plaza'),
+      href: '/market',
+      requiresAuth: !isAuthed,
+    })
   }
+
+  links.push(...getPluginTopNavLinks(t, isAuthed))
 
   // Rankings
   const rankings = modules?.rankings

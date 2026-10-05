@@ -36,6 +36,14 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 
 import { createVendor, updateVendor } from '../../api'
@@ -49,6 +57,7 @@ type VendorMutateDialogProps = {
 }
 
 const VENDOR_MUTATE_FORM_ID = 'vendor-mutate-form'
+const REGION_AUTO = 'auto'
 
 export function VendorMutateDialog({
   open,
@@ -66,6 +75,7 @@ export function VendorMutateDialog({
       name: '',
       description: '',
       icon: '',
+      region: '',
       status: 1,
     },
   })
@@ -78,6 +88,7 @@ export function VendorMutateDialog({
         name: currentVendor.name,
         description: currentVendor.description || '',
         icon: currentVendor.icon || '',
+        region: currentVendor.region || '',
         status: currentVendor.status || 1,
       })
     } else if (open && !isEdit) {
@@ -85,6 +96,7 @@ export function VendorMutateDialog({
         name: '',
         description: '',
         icon: '',
+        region: '',
         status: 1,
       })
     }
@@ -209,6 +221,41 @@ export function VendorMutateDialog({
                 </FormControl>
                 <FormDescription>
                   {t('@lobehub/icons key name')}
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name='region'
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('Region')}</FormLabel>
+                <Select
+                  value={field.value || REGION_AUTO}
+                  onValueChange={(v) =>
+                    field.onChange(v === REGION_AUTO ? '' : v)
+                  }
+                >
+                  <FormControl>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent alignItemWithTrigger={false}>
+                    <SelectGroup>
+                      <SelectItem value={REGION_AUTO}>
+                        {t('Auto (by vendor name)')}
+                      </SelectItem>
+                      <SelectItem value='intl'>{t('Overseas')}</SelectItem>
+                      <SelectItem value='cn'>{t('China')}</SelectItem>
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+                <FormDescription>
+                  {t('Which section of the model plaza this vendor appears in')}
                 </FormDescription>
                 <FormMessage />
               </FormItem>

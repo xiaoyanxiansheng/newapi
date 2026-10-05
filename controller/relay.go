@@ -153,7 +153,9 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 	relayInfo.SetEstimatePromptTokens(tokens)
 
+	restoreRouteRatio := service.UseRoutePreConsumeRatio(c)
 	priceData, err := helper.ModelPriceHelper(c, relayInfo, tokens, meta)
+	restoreRouteRatio()
 	if err != nil {
 		newAPIError = types.NewError(err, types.ErrorCodeModelPriceError, types.ErrOptionWithStatusCode(http.StatusBadRequest))
 		return
@@ -190,8 +192,9 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	}
 	relayInfo.RetryIndex = 0
 	relayInfo.LastError = nil
+	retryLimit := service.GetRetryLimit(c)
 
-	for ; retryParam.GetRetry() <= common.RetryTimes; retryParam.IncreaseRetry() {
+	for ; retryParam.GetRetry() <= retryLimit; retryParam.IncreaseRetry() {
 		relayInfo.RetryIndex = retryParam.GetRetry()
 		channel, channelErr := getChannel(c, relayInfo, retryParam)
 		if channelErr != nil {
@@ -217,6 +220,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		}
 		c.Request.Body = io.NopCloser(bodyStorage)
 
+		attemptStart := time.Now()
 		switch relayFormat {
 		case types.RelayFormatOpenAIRealtime:
 			newAPIError = relay.WssHelper(c, relayInfo)
@@ -230,15 +234,24 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 		if newAPIError == nil {
 			relayInfo.LastError = nil
+			// Time to first response when streaming, otherwise the whole attempt.
+			latency := time.Since(attemptStart)
+			if relayInfo.FirstResponseTime.After(attemptStart) {
+				latency = relayInfo.FirstResponseTime.Sub(attemptStart)
+			}
+			model.ObserveMarketCall(channel.Id, relayInfo.OriginModelName, true, latency.Milliseconds(), false)
 			return
 		}
 
 		newAPIError = service.NormalizeViolationFeeError(newAPIError)
 		relayInfo.LastError = newAPIError
+		if isChannelSideFailure(newAPIError) {
+			model.ObserveMarketCall(channel.Id, relayInfo.OriginModelName, false, 0, false)
+		}
 
 		processChannelError(c, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError)
 
-		if !shouldRetry(c, newAPIError, common.RetryTimes-retryParam.GetRetry()) {
+		if !shouldRetry(c, newAPIError, retryLimit-retryParam.GetRetry()) {
 			break
 		}
 	}
@@ -312,6 +325,14 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 		}, nil
 	}
 	channel, selectGroup, err := service.CacheGetRandomSatisfiedChannel(retryParam)
+	if service.IsRouteMode(c) {
+		if err != nil || channel == nil {
+			if err == nil {
+				err = fmt.Errorf("no available channel")
+			}
+			return nil, types.NewError(fmt.Errorf("model %s: %s", info.OriginModelName, err.Error()), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
+		}
+	}
 	if err != nil {
 		return nil, types.NewError(fmt.Errorf("获取分组 %s 下模型 %s 的可用渠道失败（retry）: %s", selectGroup, info.OriginModelName, err.Error()), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
 	}
@@ -326,6 +347,19 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 		return nil, newAPIError
 	}
 	return channel, nil
+}
+
+// isChannelSideFailure separates failures caused by the channel (upstream errors, bad keys, rate limits,
+// timeouts) from errors caused by the caller's own request, which must not hurt the channel's success rate.
+func isChannelSideFailure(err *types.NewAPIError) bool {
+	if err == nil {
+		return false
+	}
+	if types.IsChannelError(err) {
+		return true
+	}
+	code := err.StatusCode
+	return code >= 500 || code < 100 || code == 401 || code == 403 || code == 408 || code == 429
 }
 
 func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) bool {
@@ -521,7 +555,9 @@ func RelayTask(c *gin.Context) {
 		Retry:       common.GetPointer(0),
 	}
 
-	for ; retryParam.GetRetry() <= common.RetryTimes; retryParam.IncreaseRetry() {
+	retryLimit := service.GetRetryLimit(c)
+
+	for ; retryParam.GetRetry() <= retryLimit; retryParam.IncreaseRetry() {
 		var channel *model.Channel
 
 		if lockedCh, ok := relayInfo.LockedChannel.(*model.Channel); ok && lockedCh != nil {
@@ -566,7 +602,7 @@ func RelayTask(c *gin.Context) {
 				types.NewOpenAIError(taskErr.Error, types.ErrorCodeBadResponseStatusCode, taskErr.StatusCode))
 		}
 
-		if !shouldRetryTaskRelay(c, channel.Id, taskErr, common.RetryTimes-retryParam.GetRetry()) {
+		if !shouldRetryTaskRelay(c, channel.Id, taskErr, retryLimit-retryParam.GetRetry()) {
 			break
 		}
 	}

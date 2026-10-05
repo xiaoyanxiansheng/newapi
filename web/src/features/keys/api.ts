@@ -25,7 +25,7 @@ import type {
   GetApiKeysResponse,
   SearchApiKeysParams,
   ApiKeyFormData,
-  TokenAutoGroupsConfig,
+  TokenRoutesData,
 } from './types'
 
 // ============================================================================
@@ -61,11 +61,62 @@ export async function getApiKey(id: number): Promise<ApiResponse<ApiKey>> {
   return res.data
 }
 
-// Get the current user's global Auto order and the per-token selection limit.
-export async function getTokenAutoGroups(): Promise<
-  ApiResponse<TokenAutoGroupsConfig>
-> {
-  const res = await api.get('/api/token/auto-groups')
+// Routes of one key: models with their ordered channel list.
+export async function getTokenRoutes(
+  id: number
+): Promise<ApiResponse<TokenRoutesData>> {
+  const res = await api.get(`/api/token/${id}/routes`)
+  return res.data
+}
+
+export async function removeTokenRoute(
+  id: number,
+  model: string,
+  channelId: number
+): Promise<ApiResponse<TokenRoutesData>> {
+  const res = await api.delete(`/api/token/${id}/routes`, {
+    data: { model, channel_id: channelId },
+  })
+  return res.data
+}
+
+export async function addTokenRouteModel(
+  id: number,
+  model: string
+): Promise<ApiResponse<TokenRoutesData>> {
+  const res = await api.post(`/api/token/${id}/routes/models`, { model })
+  return res.data
+}
+
+export async function removeTokenRouteModel(
+  id: number,
+  model: string
+): Promise<ApiResponse<TokenRoutesData>> {
+  const res = await api.delete(`/api/token/${id}/routes/models`, {
+    data: { model },
+  })
+  return res.data
+}
+
+export async function reorderTokenRoute(
+  id: number,
+  model: string,
+  channels: number[]
+): Promise<ApiResponse<TokenRoutesData>> {
+  const res = await api.put(`/api/token/${id}/routes/order`, {
+    model,
+    channels,
+  })
+  return res.data
+}
+
+export async function setTokenAutoRoute(
+  id: number,
+  autoRoute: boolean
+): Promise<ApiResponse<TokenRoutesData>> {
+  const res = await api.put(`/api/token/${id}/auto-route`, {
+    auto_route: autoRoute,
+  })
   return res.data
 }
 

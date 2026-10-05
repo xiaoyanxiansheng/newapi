@@ -21,11 +21,9 @@ import {
   Box,
   CreditCard,
   FileText,
-  FlaskConical,
   Key,
   LayoutDashboard,
   ListTodo,
-  MessageSquare,
   Radio,
   ServerCog,
   Settings,
@@ -33,11 +31,14 @@ import {
   User,
   Users,
   Wallet,
+  Store,
+  ListChecks,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { type SidebarData } from '@/components/layout/types'
 import { ROLE } from '@/lib/roles'
+import { getPluginSidebarItems } from '@/plugins/manifest'
 
 /**
  * Root navigation groups for the application sidebar.
@@ -48,24 +49,10 @@ import { ROLE } from '@/lib/roles'
 export function useSidebarData(): SidebarData {
   const { t } = useTranslation()
 
+  const pluginItems = getPluginSidebarItems(t)
+
   return {
     navGroups: [
-      {
-        id: 'chat',
-        title: t('Chat'),
-        items: [
-          {
-            title: t('Playground'),
-            url: '/playground',
-            icon: FlaskConical,
-          },
-          {
-            title: t('Chat'),
-            icon: MessageSquare,
-            type: 'chat-presets',
-          },
-        ],
-      },
       {
         id: 'general',
         title: t('General'),
@@ -86,6 +73,11 @@ export function useSidebarData(): SidebarData {
             icon: Key,
           },
           {
+            title: t('Model Plaza'),
+            url: '/market',
+            icon: Store,
+          },
+          {
             title: t('Usage Logs'),
             url: '/usage-logs/common',
             icon: FileText,
@@ -97,6 +89,7 @@ export function useSidebarData(): SidebarData {
             configUrls: ['/usage-logs/drawing', '/usage-logs/task'],
             icon: ListTodo,
           },
+          ...pluginItems,
         ],
       },
       {
@@ -128,6 +121,11 @@ export function useSidebarData(): SidebarData {
             title: t('Models'),
             url: '/models/metadata',
             icon: Box,
+          },
+          {
+            title: t('Market Listings'),
+            url: '/market-admin',
+            icon: ListChecks,
           },
           {
             title: t('Users'),

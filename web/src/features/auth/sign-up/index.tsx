@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { Link } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
 
+import { getRegistrationCapabilities } from '@/features/auth/lib/registration-capabilities'
 import { useStatus } from '@/hooks/use-status'
 
 import { AuthLayout } from '../auth-layout'
@@ -27,7 +28,22 @@ import { SignUpForm } from './components/sign-up-form'
 
 export function SignUp() {
   const { t } = useTranslation()
-  const { status } = useStatus()
+  const { status, loading } = useStatus()
+  const { canRegister } = getRegistrationCapabilities(status)
+  let registrationContent = (
+    <p role='status' className='text-muted-foreground text-sm'>
+      {t('Registration is currently unavailable')}
+    </p>
+  )
+  if (loading && !status) {
+    registrationContent = (
+      <p role='status' className='text-muted-foreground text-sm'>
+        {t('Loading registration options...')}
+      </p>
+    )
+  } else if (canRegister) {
+    registrationContent = <SignUpForm />
+  }
 
   return (
     <AuthLayout>
@@ -48,13 +64,15 @@ export function SignUp() {
           </p>
         </div>
 
-        <SignUpForm />
+        {registrationContent}
 
-        <TermsFooter
-          variant='sign-up'
-          status={status}
-          className='text-center'
-        />
+        {canRegister && (
+          <TermsFooter
+            variant='sign-up'
+            status={status}
+            className='text-center'
+          />
+        )}
       </div>
     </AuthLayout>
   )

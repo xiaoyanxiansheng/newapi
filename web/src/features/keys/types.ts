@@ -33,16 +33,16 @@ export const apiKeySchema = z.object({
   expired_time: z.number(), // -1 for never expires
   created_time: z.number(),
   accessed_time: z.number(),
-  group: z.string().nullish().default(''),
-  auto_groups: z.array(z.string()).nullish().default(null),
-  cross_group_retry: z
-    .preprocess((v) => {
-      if (v === 1) return true
-      if (v === 0) return false
-      return v
-    }, z.boolean())
-    .optional()
-    .default(false),
+  auto_route: z.boolean().optional().default(false),
+  routes: z
+    .array(
+      z.object({
+        model: z.string(),
+        channels: z.array(z.number()),
+      })
+    )
+    .nullish()
+    .default([]),
   model_limits_enabled: z.boolean(),
   model_limits: z.string().nullish().default(''),
   allow_ips: z.string().nullish().default(''),
@@ -91,14 +91,24 @@ export interface ApiKeyFormData {
   model_limits_enabled: boolean
   model_limits: string
   allow_ips: string
-  group: string
-  auto_groups: string[]
-  cross_group_retry: boolean
+  auto_route: boolean
 }
 
-export interface TokenAutoGroupsConfig {
-  groups: string[]
-  max_count: number
+export interface RouteChannel {
+  channel_id: number
+  ratio: number
+  description: string
+  available: boolean
+}
+
+export interface RouteModel {
+  model: string
+  channels: RouteChannel[]
+}
+
+export interface TokenRoutesData {
+  auto_route: boolean
+  routes: RouteModel[]
 }
 
 // ============================================================================
@@ -107,7 +117,7 @@ export interface TokenAutoGroupsConfig {
 
 export type ApiKeysDialogType =
   | 'create'
-  | 'update'
   | 'delete'
   | 'batch-delete'
   | 'cc-switch'
+  | 'routes'

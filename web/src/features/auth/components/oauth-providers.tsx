@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
+import { FcGoogle } from 'react-icons/fc'
 
 import {
   IconDiscord,
@@ -143,6 +144,12 @@ export function OAuthProviders({
         key: `custom-${provider.slug}`,
         label: t('Continue with {{name}}', { name: provider.name }),
         onClick: () => handleCustomOAuthLogin(provider),
+        icon:
+          provider.icon === 'google' ? (
+            <span aria-hidden='true' className='flex shrink-0 items-center'>
+              <FcGoogle size={16} className='h-4 w-4' />
+            </span>
+          ) : undefined,
       })
     }
   }

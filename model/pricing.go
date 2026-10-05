@@ -43,6 +43,7 @@ type PricingVendor struct {
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
 	Icon        string `json:"icon,omitempty"`
+	Region      string `json:"region"`
 }
 
 var (
@@ -255,6 +256,7 @@ func updatePricing() {
 			Name:        v.Name,
 			Description: v.Description,
 			Icon:        v.Icon,
+			Region:      EffectiveVendorRegion(v),
 		})
 	}
 

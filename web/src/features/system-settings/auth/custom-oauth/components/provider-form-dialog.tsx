@@ -59,6 +59,7 @@ import {
 } from '../hooks/use-custom-oauth-mutations'
 import {
   customOAuthFormSchema,
+  customOAuthCreateFormSchema,
   AUTH_STYLE_OPTIONS,
   type CustomOAuthProvider,
   type CustomOAuthFormValues,
@@ -87,7 +88,7 @@ export function ProviderFormDialog(props: ProviderFormDialogProps) {
 
   const form = useForm<CustomOAuthFormValues>({
     resolver: zodResolver(
-      customOAuthFormSchema
+      isEditing ? customOAuthFormSchema : customOAuthCreateFormSchema
     ) as unknown as Resolver<CustomOAuthFormValues>,
     defaultValues: {
       name: '',
@@ -126,7 +127,9 @@ export function ProviderFormDialog(props: ProviderFormDialogProps) {
         icon: props.provider.icon || '',
         enabled: props.provider.enabled,
         client_id: props.provider.client_id,
-        client_secret: props.provider.client_secret || '',
+        // Never echo stored credentials into an editable input.
+        // The update API preserves the existing secret when this stays blank.
+        client_secret: '',
         authorization_endpoint: props.provider.authorization_endpoint,
         token_endpoint: props.provider.token_endpoint,
         user_info_endpoint: props.provider.user_info_endpoint,
@@ -226,7 +229,7 @@ export function ProviderFormDialog(props: ProviderFormDialogProps) {
           onSubmit={form.handleSubmit(onSubmit)}
         >
           {/* Preset Selector (only for creating) */}
-          {!isEditing && <PresetSelector form={form} />}
+          {props.open && !isEditing && <PresetSelector form={form} />}
 
           <Alert>
             <AlertTitle>{t('OAuth callback URL')}</AlertTitle>
@@ -373,6 +376,11 @@ export function ProviderFormDialog(props: ProviderFormDialogProps) {
                         {...field}
                       />
                     </FormControl>
+                    {isEditing && (
+                      <FormDescription>
+                        {t('Leave blank to keep the existing client secret')}
+                      </FormDescription>
+                    )}
                     <FormMessage />
                   </FormItem>
                 )}

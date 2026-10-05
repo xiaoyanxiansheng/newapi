@@ -45,6 +45,7 @@ import { registerFormSchema } from '@/features/auth/constants'
 import { useAuthRedirect } from '@/features/auth/hooks/use-auth-redirect'
 import { useEmailVerification } from '@/features/auth/hooks/use-email-verification'
 import { useTurnstile } from '@/features/auth/hooks/use-turnstile'
+import { getRegistrationCapabilities } from '@/features/auth/lib/registration-capabilities'
 import {
   getAffiliateCode,
   saveAffiliateCode,
@@ -54,10 +55,15 @@ import { isAuthBundle } from '@/lib/api'
 import { getServerErrorMessageKey } from '@/lib/server-error-message'
 import { cn } from '@/lib/utils'
 
+export type SignUpFormProps = React.HTMLAttributes<HTMLFormElement> & {
+  onRegistered?: () => void
+}
+
 export function SignUpForm({
   className,
+  onRegistered,
   ...props
-}: React.HTMLAttributes<HTMLFormElement>) {
+}: SignUpFormProps) {
   const { t } = useTranslation()
   const [isLoading, setIsLoading] = useState(false)
   const [verificationCode, setVerificationCode] = useState('')
@@ -102,11 +108,10 @@ export function SignUpForm({
   const hasUserAgreement = Boolean(status?.user_agreement_enabled)
   const hasPrivacyPolicy = Boolean(status?.privacy_policy_enabled)
   const requiresLegalConsent = hasUserAgreement || hasPrivacyPolicy
-  const oauthRegisterEnabled =
-    status?.oauth_register_enabled ??
-    status?.data?.oauth_register_enabled ??
-    true
-  const hasWeChatLogin = Boolean(status?.wechat_login)
+  const { passwordRegistrationEnabled, oauthRegistrationEnabled, canRegister } =
+    getRegistrationCapabilities(status)
+  const hasWeChatLogin =
+    oauthRegistrationEnabled && Boolean(status?.wechat_login)
   const turnstileReady = !isTurnstileEnabled || Boolean(turnstileToken)
 
   const wechatQrCodeUrl = useMemo(() => {
@@ -139,6 +144,8 @@ export function SignUpForm({
   }, [])
 
   async function onSubmit(data: z.infer<typeof registerFormSchema>) {
+    if (!passwordRegistrationEnabled) return
+
     if (requiresLegalConsent && !agreedToLegal) {
       toast.error(legalConsentErrorMessage)
       return
@@ -171,7 +178,11 @@ export function SignUpForm({
 
       if (res?.success) {
         toast.success(t('Account created! Please sign in'))
-        redirectToLogin()
+        if (onRegistered) {
+          onRegistered()
+        } else {
+          redirectToLogin()
+        }
       } else {
         toast.error(res?.message || t('Failed to create account'))
       }
@@ -240,77 +251,46 @@ export function SignUpForm({
     verificationCodeAction = <Loader2 className='h-4 w-4 animate-spin' />
   }
 
+  if (!canRegister) return null
+
   return (
     <Form {...form}>
       <form
-        onSubmit={form.handleSubmit(onSubmit)}
+        onSubmit={
+          passwordRegistrationEnabled
+            ? form.handleSubmit(onSubmit)
+            : (event) => event.preventDefault()
+        }
         className={cn('grid gap-4', className)}
         {...props}
       >
-        {/* Username Field */}
-        <FormField
-          control={form.control}
-          name='username'
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>{t('Username')}</FormLabel>
-              <FormControl>
-                <Input placeholder={t('Enter your username')} {...field} />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        {/* Password Field */}
-        <FormField
-          control={form.control}
-          name='password'
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>{t('Password')}</FormLabel>
-              <FormControl>
-                <PasswordInput
-                  placeholder={t('Enter password (8-20 characters)')}
-                  {...field}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        {/* Confirm Password Field */}
-        <FormField
-          control={form.control}
-          name='confirmPassword'
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>{t('Confirm password')}</FormLabel>
-              <FormControl>
-                <PasswordInput placeholder={t('Confirm password')} {...field} />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        {/* Email Verification Section */}
-        {emailVerificationRequired && (
+        {passwordRegistrationEnabled && (
           <>
-            {/* Email Field */}
+            {/* Username Field */}
             <FormField
               control={form.control}
-              name='email'
+              name='username'
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>
-                    {t('Email (required for verification)')}
-                  </FormLabel>
+                  <FormLabel>{t('Username')}</FormLabel>
                   <FormControl>
-                    <Input
-                      placeholder={t('name@example.com')}
-                      type='email'
+                    <Input placeholder={t('Enter your username')} {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            {/* Password Field */}
+            <FormField
+              control={form.control}
+              name='password'
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('Password')}</FormLabel>
+                  <FormControl>
+                    <PasswordInput
+                      placeholder={t('Enter password (8-20 characters)')}
                       {...field}
                     />
                   </FormControl>
@@ -319,42 +299,87 @@ export function SignUpForm({
               )}
             />
 
-            {/* Verification Code Field */}
-            <div className='flex items-end gap-2'>
-              <div className='flex-1'>
-                <Input
-                  placeholder={t('Verification code')}
-                  value={verificationCode}
-                  onChange={(e) => setVerificationCode(e.target.value)}
+            {/* Confirm Password Field */}
+            <FormField
+              control={form.control}
+              name='confirmPassword'
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('Confirm password')}</FormLabel>
+                  <FormControl>
+                    <PasswordInput
+                      placeholder={t('Confirm password')}
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            {/* Email Verification Section */}
+            {emailVerificationRequired && (
+              <>
+                {/* Email Field */}
+                <FormField
+                  control={form.control}
+                  name='email'
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>
+                        {t('Email (required for verification)')}
+                      </FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder={t('name@example.com')}
+                          type='email'
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                {/* Verification Code Field */}
+                <div className='flex items-end gap-2'>
+                  <div className='flex-1'>
+                    <Input
+                      placeholder={t('Verification code')}
+                      value={verificationCode}
+                      onChange={(e) => setVerificationCode(e.target.value)}
+                    />
+                  </div>
+                  <Button
+                    variant='outline'
+                    type='button'
+                    disabled={
+                      isLoading ||
+                      isSendingCode ||
+                      isActive ||
+                      !emailValue ||
+                      !turnstileReady
+                    }
+                    onClick={handleSendVerificationCode}
+                  >
+                    {verificationCodeAction}
+                  </Button>
+                </div>
+              </>
+            )}
+
+            {/* Turnstile */}
+            {isTurnstileEnabled && (
+              <div className='mt-2'>
+                <Turnstile
+                  key={turnstileWidgetKey}
+                  siteKey={turnstileSiteKey}
+                  onVerify={setTurnstileToken}
+                  onExpire={() => setTurnstileToken('')}
                 />
               </div>
-              <Button
-                variant='outline'
-                type='button'
-                disabled={
-                  isLoading ||
-                  isSendingCode ||
-                  isActive ||
-                  !emailValue ||
-                  !turnstileReady
-                }
-                onClick={handleSendVerificationCode}
-              >
-                {verificationCodeAction}
-              </Button>
-            </div>
+            )}
           </>
-        )}
-
-        {/* Turnstile */}
-        {isTurnstileEnabled && (
-          <div className='mt-2'>
-            <Turnstile
-              key={turnstileWidgetKey}
-              siteKey={turnstileSiteKey}
-              onVerify={setTurnstileToken}
-            />
-          </div>
         )}
 
         <LegalConsent
@@ -365,20 +390,22 @@ export function SignUpForm({
         />
 
         {/* Submit Button */}
-        <Button
-          type='submit'
-          className='mt-2 w-full justify-center gap-2'
-          disabled={
-            isLoading ||
-            (requiresLegalConsent && !agreedToLegal) ||
-            !turnstileReady
-          }
-        >
-          {isLoading ? <Loader2 className='h-4 w-4 animate-spin' /> : null}
-          {t('Create account')}
-        </Button>
+        {passwordRegistrationEnabled && (
+          <Button
+            type='submit'
+            className='mt-2 w-full justify-center gap-2'
+            disabled={
+              isLoading ||
+              (requiresLegalConsent && !agreedToLegal) ||
+              !turnstileReady
+            }
+          >
+            {isLoading ? <Loader2 className='h-4 w-4 animate-spin' /> : null}
+            {t('Create account')}
+          </Button>
+        )}
 
-        {oauthRegisterEnabled && (
+        {oauthRegistrationEnabled && (
           <OAuthProviders
             status={status}
             disabled={isLoading || (requiresLegalConsent && !agreedToLegal)}

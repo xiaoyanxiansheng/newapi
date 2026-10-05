@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import type { UseFormReturn } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 
@@ -42,70 +42,80 @@ export function PresetSelector(props: PresetSelectorProps) {
   const { t } = useTranslation()
   const [selectedPreset, setSelectedPreset] = useState<string>('')
   const [baseUrl, setBaseUrl] = useState<string>('')
+  const presetInputId = useId()
+  const baseUrlInputId = useId()
+  const preset = OAUTH_PRESETS.find((p) => p.key === selectedPreset)
+
+  const applyEndpoints = (
+    selected: (typeof OAUTH_PRESETS)[number],
+    url: string
+  ) => {
+    const cleanUrl = url.trim().replace(/\/+$/, '')
+    const hasEndpoints = !selected.needsBaseUrl || !!cleanUrl
+    const prefix = selected.needsBaseUrl ? cleanUrl : ''
+    props.form.setValue(
+      'authorization_endpoint',
+      hasEndpoints ? prefix + selected.authorization_endpoint : '',
+      { shouldDirty: true }
+    )
+    props.form.setValue(
+      'token_endpoint',
+      hasEndpoints ? prefix + selected.token_endpoint : '',
+      { shouldDirty: true }
+    )
+    props.form.setValue(
+      'user_info_endpoint',
+      hasEndpoints ? prefix + selected.user_info_endpoint : '',
+      { shouldDirty: true }
+    )
+  }
 
   const handlePresetChange = (presetKey: string) => {
     setSelectedPreset(presetKey)
-    const preset = OAUTH_PRESETS.find((p) => p.key === presetKey)
-    if (!preset) return
+    const selected = OAUTH_PRESETS.find((p) => p.key === presetKey)
+    if (!selected) return
 
-    // Auto-fill name, slug, icon, and field mappings immediately
-    props.form.setValue('name', preset.name, { shouldDirty: true })
+    // Only public protocol settings belong to presets, never credentials.
+    props.form.setValue('name', selected.name, { shouldDirty: true })
     props.form.setValue(
       'slug',
       presetKey.toLowerCase().replaceAll(/\s+/g, '-'),
-      {
-        shouldDirty: true,
-      }
+      { shouldDirty: true }
     )
-    props.form.setValue('icon', preset.icon, { shouldDirty: true })
-    props.form.setValue('scopes', preset.scopes, { shouldDirty: true })
-    props.form.setValue('user_id_field', preset.user_id_field, {
+    props.form.setValue('icon', selected.icon, { shouldDirty: true })
+    props.form.setValue('scopes', selected.scopes, { shouldDirty: true })
+    props.form.setValue('user_id_field', selected.user_id_field, {
       shouldDirty: true,
     })
-    props.form.setValue('username_field', preset.username_field, {
+    props.form.setValue('username_field', selected.username_field, {
       shouldDirty: true,
     })
-    props.form.setValue('display_name_field', preset.display_name_field, {
+    props.form.setValue('display_name_field', selected.display_name_field, {
       shouldDirty: true,
     })
-    props.form.setValue('email_field', preset.email_field, {
+    props.form.setValue('email_field', selected.email_field, {
       shouldDirty: true,
     })
-
-    // Apply base URL if already entered
-    if (baseUrl) {
-      applyEndpoints(preset, baseUrl)
-    }
+    props.form.setValue('well_known', selected.well_known ?? '', {
+      shouldDirty: true,
+    })
+    props.form.setValue('auth_style', selected.auth_style ?? 0, {
+      shouldDirty: true,
+    })
+    props.form.setValue('access_policy', selected.access_policy ?? '', {
+      shouldDirty: true,
+    })
+    props.form.setValue('access_denied_message', '', { shouldDirty: true })
+    props.form.setValue('enabled', selected.enabled ?? true, {
+      shouldDirty: true,
+    })
+    applyEndpoints(selected, baseUrl)
   }
 
   const handleBaseUrlChange = (url: string) => {
     setBaseUrl(url)
-    if (!selectedPreset) return
-
-    const preset = OAUTH_PRESETS.find((p) => p.key === selectedPreset)
     if (!preset) return
-
     applyEndpoints(preset, url)
-  }
-
-  const applyEndpoints = (
-    preset: (typeof OAUTH_PRESETS)[number],
-    url: string
-  ) => {
-    const cleanUrl = url.replace(/\/+$/, '')
-    props.form.setValue(
-      'authorization_endpoint',
-      cleanUrl + preset.authorization_endpoint,
-      { shouldDirty: true }
-    )
-    props.form.setValue('token_endpoint', cleanUrl + preset.token_endpoint, {
-      shouldDirty: true,
-    })
-    props.form.setValue(
-      'user_info_endpoint',
-      cleanUrl + preset.user_info_endpoint,
-      { shouldDirty: true }
-    )
   }
 
   return (
@@ -113,38 +123,52 @@ export function PresetSelector(props: PresetSelectorProps) {
       <p className='text-sm font-medium'>{t('Quick Setup from Preset')}</p>
       <div className='grid grid-cols-1 gap-3 sm:grid-cols-2'>
         <div className='space-y-1.5'>
-          <Label>{t('Preset Template')}</Label>
+          <Label htmlFor={presetInputId}>{t('Preset Template')}</Label>
           <Select
-            items={OAUTH_PRESETS.map((preset) => ({
-              value: preset.key,
-              label: preset.name,
+            items={OAUTH_PRESETS.map((item) => ({
+              value: item.key,
+              label: item.name,
             }))}
             value={selectedPreset}
             onValueChange={(v) => v !== null && handlePresetChange(v)}
           >
-            <SelectTrigger className='w-full'>
+            <SelectTrigger id={presetInputId} className='w-full'>
               <SelectValue placeholder={t('Select a preset...')} />
             </SelectTrigger>
             <SelectContent alignItemWithTrigger={false}>
               <SelectGroup>
-                {OAUTH_PRESETS.map((preset) => (
-                  <SelectItem key={preset.key} value={preset.key}>
-                    {preset.name}
+                {OAUTH_PRESETS.map((item) => (
+                  <SelectItem key={item.key} value={item.key}>
+                    {item.name}
                   </SelectItem>
                 ))}
               </SelectGroup>
             </SelectContent>
           </Select>
         </div>
-        <div className='space-y-1.5'>
-          <Label>{t('Base URL')}</Label>
-          <Input
-            placeholder={t('https://your-server.example.com')}
-            value={baseUrl}
-            onChange={(e) => handleBaseUrlChange(e.target.value)}
-          />
-        </div>
+        {preset?.needsBaseUrl !== false ? (
+          <div className='space-y-1.5'>
+            <Label htmlFor={baseUrlInputId}>{t('Base URL')}</Label>
+            <Input
+              id={baseUrlInputId}
+              placeholder={t('https://your-server.example.com')}
+              value={baseUrl}
+              onChange={(e) => handleBaseUrlChange(e.target.value)}
+            />
+          </div>
+        ) : (
+          <p className='text-muted-foreground self-center text-sm'>
+            {t('Google uses fixed endpoints; no base URL is needed.')}
+          </p>
+        )}
       </div>
+      {selectedPreset === 'google' && (
+        <p className='text-muted-foreground text-sm'>
+          {t(
+            'Google login stays disabled until you explicitly enable it. Enter your OAuth client credentials in this secure admin form, not in chat. A Gemini API key cannot be used for Google login.'
+          )}
+        </p>
+      )}
     </SettingsControlGroup>
   )
 }

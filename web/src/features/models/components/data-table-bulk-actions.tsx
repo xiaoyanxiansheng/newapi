@@ -146,16 +146,16 @@ export function DataTableBulkActions<TData>({
                 size='icon'
                 onClick={handleCopyNames}
                 className='size-8'
-                aria-label={t('Copy model names')}
-                title={t('Copy model names')}
+                aria-label={t('Copy names')}
+                title={t('Copy names')}
               />
             }
           >
             <Copy />
-            <span className='sr-only'>{t('Copy model names')}</span>
+            <span className='sr-only'>{t('Copy names')}</span>
           </TooltipTrigger>
           <TooltipContent>
-            <p>{t('Copy model names')}</p>
+            <p>{t('Copy names')}</p>
           </TooltipContent>
         </Tooltip>
 

@@ -38,7 +38,8 @@ type tokenRequest struct {
 
 type tokenResponse struct {
 	*model.Token
-	AutoGroups []string `json:"auto_groups"`
+	AutoGroups []string           `json:"auto_groups"`
+	Routes     []model.TokenRoute `json:"routes"`
 }
 
 func buildMaskedTokenResponse(token *model.Token) *tokenResponse {
@@ -55,7 +56,11 @@ func buildMaskedTokenResponse(token *model.Token) *tokenResponse {
 	if len(autoGroups) == 0 {
 		autoGroups = nil
 	}
-	return &tokenResponse{Token: &maskedToken, AutoGroups: autoGroups}
+	routes := token.GetRoutes()
+	if routes == nil {
+		routes = []model.TokenRoute{}
+	}
+	return &tokenResponse{Token: &maskedToken, AutoGroups: autoGroups, Routes: routes}
 }
 
 func buildMaskedTokenResponses(tokens []*model.Token) []*tokenResponse {
@@ -299,14 +304,6 @@ func AddToken(c *gin.Context) {
 		})
 		return
 	}
-	if token.Group == "auto" {
-		if !setTokenAutoGroups(c, &token, request.AutoGroups.Groups) {
-			return
-		}
-	} else {
-		token.CrossGroupRetry = false
-		_ = token.SetAutoGroups(nil)
-	}
 	key, err := common.GenerateKey()
 	if err != nil {
 		common.ApiErrorI18n(c, i18n.MsgTokenGenerateFailed)
@@ -325,9 +322,7 @@ func AddToken(c *gin.Context) {
 		ModelLimitsEnabled: token.ModelLimitsEnabled,
 		ModelLimits:        token.ModelLimits,
 		AllowIps:           token.AllowIps,
-		Group:              token.Group,
-		CrossGroupRetry:    token.CrossGroupRetry,
-		AutoGroups:         token.AutoGroups,
+		AutoRoute:          token.AutoRoute,
 	}
 	err = cleanToken.Insert()
 	if err != nil {
@@ -337,6 +332,7 @@ func AddToken(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
+		"data":    buildMaskedTokenResponse(&cleanToken),
 	})
 }
 
@@ -405,16 +401,7 @@ func UpdateToken(c *gin.Context) {
 		cleanToken.ModelLimitsEnabled = token.ModelLimitsEnabled
 		cleanToken.ModelLimits = token.ModelLimits
 		cleanToken.AllowIps = token.AllowIps
-		cleanToken.Group = token.Group
-		cleanToken.CrossGroupRetry = token.CrossGroupRetry
-		if token.Group != "auto" {
-			cleanToken.CrossGroupRetry = false
-			_ = cleanToken.SetAutoGroups(nil)
-		} else if request.AutoGroups.Set {
-			if !setTokenAutoGroups(c, cleanToken, request.AutoGroups.Groups) {
-				return
-			}
-		}
+		cleanToken.AutoRoute = token.AutoRoute
 	}
 	err = cleanToken.Update()
 	if err != nil {

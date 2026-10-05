@@ -1,0 +1,447 @@
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
+.hwjai-landing {
+  padding-top: 4rem;
+}
+
+.hwjai-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.hwjai-story {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background: #142232;
+  color: #f2f6fc;
+}
+
+.hwjai-story::before {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  background:
+    radial-gradient(ellipse at 0% 100%, #17597766, transparent 65%),
+    radial-gradient(ellipse at 100% 0%, #5364a32b, transparent 70%);
+  content: '';
+}
+
+.hwjai-story-content {
+  position: relative;
+  max-width: 40rem;
+  margin: 0 auto;
+  padding: 2rem 1.5rem;
+}
+
+.hwjai-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: #bed8ee;
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+}
+
+.hwjai-eyebrow > span {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 50%;
+  background: #91d8f8;
+  box-shadow: 0 0 12px #91d8f833;
+}
+
+.hwjai-headline {
+  margin: 1rem 0 0;
+  font-size: clamp(1.8rem, 3vw, 3.5rem);
+  font-weight: 650;
+  line-height: 1.2;
+  letter-spacing: -0.045em;
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+}
+
+.hwjai-headline > span {
+  display: block;
+  color: #9dddff;
+}
+
+.hwjai-story-description {
+  max-width: 33rem;
+  margin-top: 1rem;
+  color: #c1cddb;
+  font-size: 0.875rem;
+  line-height: 1.8;
+  text-wrap: pretty;
+}
+
+.hwjai-benefits,
+.hwjai-access-art,
+.hwjai-docs-link {
+  display: none;
+}
+
+.hwjai-account {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2.5rem 1.5rem;
+  background: var(--background);
+}
+
+.hwjai-auth-panel {
+  width: 100%;
+  max-width: 27rem;
+  min-width: 0;
+}
+
+.hwjai-auth-kicker {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+}
+
+.hwjai-auth-kicker > svg {
+  color: #31728c;
+}
+
+.dark .hwjai-auth-kicker > svg {
+  color: #9dddff;
+}
+
+.hwjai-auth-title {
+  margin-top: 0.75rem;
+  font-size: 1.9rem;
+  font-weight: 650;
+  line-height: 1.3;
+  letter-spacing: -0.035em;
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+}
+
+.hwjai-auth-description {
+  margin-top: 0.625rem;
+  color: var(--muted-foreground);
+  font-size: 0.875rem;
+  line-height: 1.75;
+}
+
+.hwjai-auth-panel [data-slot='input'] {
+  height: 2.875rem;
+  border-radius: 0.7rem;
+  box-shadow: none;
+}
+
+.hwjai-auth-panel form > button[type='submit'],
+.hwjai-auth-panel .hwjai-primary-button {
+  min-height: 2.875rem;
+  border-radius: 0.7rem;
+  background: #193b52;
+  color: #f4faff;
+  font-weight: 600;
+}
+
+.hwjai-auth-panel form > button[type='submit']:hover,
+.hwjai-auth-panel .hwjai-primary-button:hover {
+  background: #234e68;
+}
+
+.dark .hwjai-auth-panel form > button[type='submit'],
+.dark .hwjai-auth-panel .hwjai-primary-button {
+  background: #a0dcf8;
+  color: #142232;
+}
+
+.dark .hwjai-auth-panel form > button[type='submit']:hover,
+.dark .hwjai-auth-panel .hwjai-primary-button:hover {
+  background: #b9e7fc;
+}
+
+.hwjai-auth-panel form > div > button[type='button'] {
+  min-height: 2.75rem;
+}
+
+.hwjai-auth-panel [data-slot='tabs-list'] {
+  background: var(--muted);
+}
+
+.hwjai-account-note {
+  width: 100%;
+  max-width: 27rem;
+  margin-top: 2rem;
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  text-align: center;
+}
+
+.hwjai-start {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2.25rem;
+  max-width: 80rem;
+  margin: 0 auto;
+  padding: 3rem 1.5rem;
+}
+
+.hwjai-start-heading h2 {
+  max-width: 19rem;
+  margin-top: 0.75rem;
+  font-size: 1.4rem;
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: -0.03em;
+  text-wrap: balance;
+}
+
+.hwjai-market-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  color: var(--foreground);
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.hwjai-market-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.hwjai-steps {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1.5rem;
+}
+
+.hwjai-steps li {
+  min-width: 0;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
+.hwjai-steps li > span {
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.hwjai-steps h3 {
+  margin-top: 1rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.hwjai-steps p {
+  margin-top: 0.5rem;
+  color: var(--muted-foreground);
+  font-size: 0.8rem;
+  line-height: 1.8;
+}
+
+@media (min-width: 640px) {
+  .hwjai-story-content {
+    padding: 2.5rem;
+  }
+
+  .hwjai-account {
+    padding: 3rem 2.5rem;
+  }
+
+  .hwjai-steps {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .hwjai-start {
+    padding: 3.5rem 2.5rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .hwjai-split {
+    grid-template-columns: minmax(0, 42fr) minmax(0, 58fr);
+    min-height: calc(100svh - 4rem);
+  }
+
+  .hwjai-story {
+    display: flex;
+    align-items: center;
+  }
+
+  .hwjai-story-content {
+    width: 100%;
+    padding: 3.5rem clamp(2.5rem, 4vw, 5.5rem);
+  }
+
+  .hwjai-headline {
+    margin-top: 1.5rem;
+  }
+
+  .hwjai-story-description {
+    margin-top: 1.5rem;
+    font-size: 0.9rem;
+  }
+
+  .hwjai-benefits {
+    display: grid;
+    gap: 1.25rem;
+    margin-top: 2.25rem;
+  }
+
+  .hwjai-benefits li {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+
+  .hwjai-benefits svg {
+    flex-shrink: 0;
+    width: 1rem;
+    height: 1rem;
+    margin-top: 0.2rem;
+    color: #9dddff;
+  }
+
+  .hwjai-benefits strong {
+    display: block;
+    font-size: 0.875rem;
+    font-weight: 500;
+  }
+
+  .hwjai-benefits li span {
+    display: block;
+    margin-top: 0.3rem;
+    color: #b4c3d3;
+    font-size: 0.75rem;
+    line-height: 1.7;
+  }
+
+  .hwjai-access-art {
+    position: relative;
+    display: grid;
+    min-height: 12.5rem;
+    place-items: center;
+    margin-top: 2rem;
+  }
+
+  .hwjai-access-orbit {
+    position: absolute;
+    inset: 0.5rem 0;
+    transform: rotate(-15deg);
+    border: 1px solid #9dddff1c;
+    border-radius: 50%;
+  }
+
+  .hwjai-access-orbit::after {
+    position: absolute;
+    inset: -1rem 2rem;
+    border: 1px solid #9dddff0f;
+    border-radius: 50%;
+    content: '';
+  }
+
+  .hwjai-access-card {
+    position: relative;
+    z-index: 1;
+    width: min(100%, 19rem);
+    padding: 1.125rem 1.25rem;
+    transform: rotate(-7deg);
+    border: 1px solid #9dddff38;
+    border-radius: 1.1rem;
+    background: linear-gradient(130deg, #30485b, #1a2e41 60%, #29425b);
+    box-shadow: 0 1.5rem 3rem #030b1640;
+  }
+
+  .hwjai-access-card-top {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    font-size: 0.9rem;
+    font-weight: 600;
+  }
+
+  .hwjai-access-card-top > svg:last-child {
+    margin-left: auto;
+    color: #b1d4ed;
+  }
+
+  .hwjai-access-card-label {
+    margin-top: 1.75rem;
+    color: #c5e2f8;
+    font-size: 0.7rem;
+    letter-spacing: 0.25em;
+  }
+
+  .hwjai-access-card-bottom {
+    display: flex;
+    align-items: end;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-top: 0.75rem;
+    color: #b4cbdc;
+    font-size: 0.5rem;
+    letter-spacing: 0.025em;
+  }
+
+  .hwjai-token-dots {
+    font-size: 0.75rem;
+    white-space: nowrap;
+  }
+
+  .hwjai-art-word {
+    position: absolute;
+    right: 0;
+    bottom: -0.25rem;
+    color: #9dddff0f;
+    font-size: 4.5rem;
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: -0.06em;
+  }
+
+  .hwjai-docs-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 1.75rem;
+    color: #d7e4ef;
+    font-size: 0.75rem;
+  }
+
+  .hwjai-docs-link:hover {
+    color: #ffffff;
+    text-decoration: underline;
+    text-underline-offset: 4px;
+  }
+
+  .hwjai-account {
+    padding: 3rem 4rem;
+  }
+
+  .hwjai-start {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+    gap: 4rem;
+    padding: 4rem 3rem;
+  }
+}

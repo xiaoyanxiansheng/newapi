@@ -36,6 +36,9 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// silentChannelTestKey marks a test context whose run must not write a consume log (market probes).
+type silentChannelTestKey struct{}
+
 type testResult struct {
 	context     *gin.Context
 	localErr    error
@@ -495,6 +498,9 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 	milliseconds := tok.Sub(tik).Milliseconds()
 	consumedTime := float64(milliseconds) / 1000.0
 	other := buildTestLogOther(c, info, priceData, usage, tieredResult)
+	if ctx.Value(silentChannelTestKey{}) != nil {
+		return testResult{context: c}
+	}
 	model.RecordConsumeLog(c, testUserID, model.RecordConsumeLogParams{
 		ChannelId:        channel.Id,
 		PromptTokens:     usage.PromptTokens,

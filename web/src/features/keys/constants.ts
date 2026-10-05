@@ -18,6 +18,9 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { type StatusBadgeProps } from '@/components/status-badge'
 
+/** Query key prefix of the per-key route lists: [prefix, tokenId]. */
+export const API_KEY_ROUTES_QUERY_KEY = 'api-key-routes'
+
 // ============================================================================
 // API Key Status Configuration
 // label values are i18n keys; use t(config.label) in components (e.g. StatusBadge)

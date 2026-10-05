@@ -114,6 +114,10 @@ func main() {
 	// 数据看板
 	go model.UpdateQuotaData()
 
+	// Model plaza monitoring: persist request outcomes and probe listings in the background
+	model.StartMarketStatFlusher()
+	controller.StartMarketProbe()
+
 	if os.Getenv("CHANNEL_UPDATE_FREQUENCY") != "" {
 		frequency, err := strconv.Atoi(os.Getenv("CHANNEL_UPDATE_FREQUENCY"))
 		if err != nil {

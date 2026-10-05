@@ -541,9 +541,9 @@ function ModelHeader(props: { model: PricingModel }) {
           value={model.model_name || ''}
           className='size-6'
           iconClassName='size-3'
-          tooltip={t('Copy model name')}
+          tooltip={t('Copy name')}
           successTooltip={t('Copied!')}
-          aria-label={t('Copy model name')}
+          aria-label={t('Copy name')}
         />
       </div>
       <div className='mt-1 flex flex-wrap items-center gap-1.5 text-xs'>
