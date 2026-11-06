@@ -26,19 +26,19 @@ import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
-import {
   Command,
   CommandEmpty,
   CommandInput,
   CommandItem,
   CommandList,
 } from '@/components/ui/command'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import {
   Popover,
   PopoverContent,
@@ -52,7 +52,10 @@ import {
   UnavailableChannelRow,
 } from '@/features/market/components/market-channel-list'
 import { useMarketModels } from '@/features/market/hooks/use-market-models'
-import { formatRatioValue } from '@/features/market/lib/market-helpers'
+import {
+  formatRatioValue,
+  formatListingId,
+} from '@/features/market/lib/market-helpers'
 import type { MarketActions, MarketModel } from '@/features/market/types'
 import { cn } from '@/lib/utils'
 
@@ -65,12 +68,7 @@ import {
   setTokenAutoRoute,
 } from '../api'
 import { API_KEY_ROUTES_QUERY_KEY } from '../constants'
-import type {
-  ApiKey,
-  ApiResponse,
-  RouteModel,
-  TokenRoutesData,
-} from '../types'
+import type { ApiKey, ApiResponse, RouteModel, TokenRoutesData } from '../types'
 import { ApiKeySettingsForm } from './api-key-settings-form'
 
 const NO_ROUTES: RouteModel[] = []
@@ -102,11 +100,13 @@ function RouteModelBlock(props: RouteModelBlockProps) {
   const [expanded, setExpanded] = useState(props.defaultExpanded)
   const { route, marketModel } = props
 
-  const marketChannelIds = new Set(
-    (marketModel?.channels ?? []).map((channel) => channel.channel_id)
-  )
   const unavailable = route.channels.filter(
-    (channel) => !marketChannelIds.has(channel.channel_id)
+    (channel) =>
+      !(marketModel?.channels ?? []).some((item) =>
+        channel.listing_id
+          ? item.listing_id === channel.listing_id
+          : item.channel_id === channel.channel_id
+      )
   )
 
   return (
@@ -115,7 +115,7 @@ function RouteModelBlock(props: RouteModelBlockProps) {
         <button
           type='button'
           aria-expanded={expanded}
-          aria-label={t('Toggle channels')}
+          aria-label={t('Toggle options')}
           onClick={() => setExpanded((value) => !value)}
           className='flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1.5 px-3 py-2 text-left'
         >
@@ -129,17 +129,26 @@ function RouteModelBlock(props: RouteModelBlockProps) {
           <span className='font-mono text-sm font-medium'>{route.model}</span>
           <span className='flex flex-wrap items-center gap-1'>
             {route.channels.length === 0 && (
-              <Badge variant='destructive'>{t('No channel selected')}</Badge>
+              <Badge variant='destructive'>{t('No option selected')}</Badge>
             )}
-            {route.channels.map((channel) => (
-              <Badge
-                key={channel.channel_id}
-                variant={channel.available ? 'outline' : 'destructive'}
-                className='font-mono'
-              >
-                {`#${channel.channel_id} ×${formatRatioValue(channel.ratio)}`}
-              </Badge>
-            ))}
+            {route.channels.map((channel) => {
+              const listingId = marketModel?.channels.find((item) =>
+                channel.listing_id
+                  ? item.listing_id === channel.listing_id
+                  : item.channel_id === channel.channel_id
+              )?.listing_id
+              const displayId = listingId ?? channel.listing_id
+              return (
+                <Badge
+                  key={channel.listing_id ?? channel.channel_id}
+                  variant={channel.available ? 'outline' : 'destructive'}
+                  className='font-mono'
+                >
+                  {displayId ? formatListingId(displayId) : t('Unavailable ID')}{' '}
+                  ×{formatRatioValue(channel.ratio)}
+                </Badge>
+              )
+            })}
           </span>
         </button>
         <Button
@@ -163,6 +172,11 @@ function RouteModelBlock(props: RouteModelBlockProps) {
               model={marketModel}
               unavailable={unavailable}
               routeOrder={route.channels.map((channel) => channel.channel_id)}
+              listingOrder={
+                route.channels.every((channel) => channel.listing_id)
+                  ? route.channels.map((channel) => channel.listing_id ?? 0)
+                  : undefined
+              }
               actions={props.actions}
             />
           ) : (
@@ -170,13 +184,13 @@ function RouteModelBlock(props: RouteModelBlockProps) {
               {props.isMarketLoading && <Skeleton className='m-3 h-20' />}
               {!props.isMarketLoading && unavailable.length === 0 && (
                 <p className='text-muted-foreground p-3 text-sm'>
-                  {t('No channel is available for this model.')}
+                  {t('No option is available for this model.')}
                 </p>
               )}
               {!props.isMarketLoading &&
                 unavailable.map((channel) => (
                   <UnavailableChannelRow
-                    key={channel.channel_id}
+                    key={channel.listing_id ?? channel.channel_id}
                     modelName={route.model}
                     channel={channel}
                     actions={props.actions}
@@ -252,24 +266,40 @@ export function ApiKeyDialog(props: ApiKeyDialogProps) {
   const actions: MarketActions = {
     tokenId: tokenId ?? null,
     busy: market.isMutating || isChanging,
-    onJoin: (model, channelId) => {
-      if (tokenId !== undefined) market.join({ tokenId, model, channelId })
+    onJoin: (model, channelId, listingId) => {
+      if (tokenId !== undefined) {
+        market.join({ tokenId, model, channelId, listingId })
+      }
     },
-    onLeave: (model, channelId) => {
-      if (tokenId !== undefined) market.leave({ tokenId, model, channelId })
+    onLeave: (model, channelId, listingId) => {
+      if (tokenId !== undefined) {
+        market.leave({ tokenId, model, channelId, listingId })
+      }
     },
-    onMove: (model, channelId, delta) => {
-      const ids = routes
-        .find((route) => route.model === model)
-        ?.channels.map((channel) => channel.channel_id)
-      if (tokenId === undefined || !ids) return
-      const index = ids.indexOf(channelId)
+    onMove: (model, channelId, delta, listingId) => {
+      const selectedRoute = routes.find((route) => route.model === model)
+      if (tokenId === undefined || !selectedRoute) return
+      const channels = [...selectedRoute.channels]
+      const index = channels.findIndex((channel) =>
+        listingId
+          ? channel.listing_id === listingId
+          : channel.channel_id === channelId
+      )
       const target = index + delta
-      if (index < 0 || target < 0 || target >= ids.length) return
-      const [moved] = ids.splice(index, 1)
-      ids.splice(target, 0, moved)
+      if (index < 0 || target < 0 || target >= channels.length) return
+      const [moved] = channels.splice(index, 1)
+      channels.splice(target, 0, moved)
       runChange(async () =>
-        applyResult(await reorderTokenRoute(tokenId, model, ids))
+        applyResult(
+          await reorderTokenRoute(
+            tokenId,
+            model,
+            channels.map((channel) => channel.channel_id),
+            channels.every((channel) => channel.listing_id)
+              ? channels.map((channel) => channel.listing_id ?? 0)
+              : undefined
+          )
+        )
       )
     },
   }
@@ -311,7 +341,7 @@ export function ApiKeyDialog(props: ApiKeyDialogProps) {
 
   return (
     <Dialog open={props.open} onOpenChange={handleOpenChange}>
-      <DialogContent className='max-h-[85vh] overflow-y-auto sm:max-w-5xl'>
+      <DialogContent className='max-h-[92vh] overflow-y-auto sm:max-w-6xl'>
         <DialogHeader>
           <div className='flex flex-wrap items-center gap-x-3 gap-y-1 pr-8'>
             <DialogTitle>
@@ -336,10 +366,8 @@ export function ApiKeyDialog(props: ApiKeyDialogProps) {
               </Button>
             )}
           </div>
-          <DialogDescription>
-            {tokenId === undefined
-              ? t('Add a new API key by providing necessary info.')
-              : t('Update the API key by providing necessary info.')}
+          <DialogDescription className='sr-only'>
+            {tokenId === undefined ? t('Create API Key') : t('Update API Key')}
           </DialogDescription>
         </DialogHeader>
 
@@ -362,107 +390,103 @@ export function ApiKeyDialog(props: ApiKeyDialogProps) {
           <Skeleton className='h-64 w-full' />
         )}
 
-        <section className='flex flex-col gap-3'>
+        <section className='flex min-h-0 flex-col gap-2'>
           <div className='flex flex-col gap-0.5'>
             <h3 className='text-sm font-semibold'>{t('Routes')}</h3>
             <p className='text-muted-foreground text-xs'>
-              {t(
-                'Requests are routed by model name. The first channel is the primary one; the others are fallbacks when auto route is on.'
-              )}
+              {t('Choose models and their primary or fallback IDs.')}
             </p>
           </div>
           {tokenId === undefined ? (
             <div className='text-muted-foreground rounded-md border border-dashed p-6 text-center text-sm'>
-              {t('Create the key first, then add models and channels here.')}
+              {t('Create the key first, then add models and IDs here.')}
             </div>
           ) : (
             <>
-            <div className='flex items-center justify-between gap-3 rounded-md border p-3'>
-              <div className='flex flex-col gap-0.5'>
-                <span className='text-sm font-medium'>{t('Auto route')}</span>
-                <span className='text-muted-foreground text-xs'>
-                  {t(
-                    'On: try the next channel when one fails. Off: only the first channel is used.'
-                  )}
-                </span>
-              </div>
-              <Switch
-                checked={autoRoute}
-                disabled={routesQuery.isLoading || isChanging}
-                onCheckedChange={handleAutoRoute}
-              />
-            </div>
-
-            <div className='flex items-center justify-between gap-3'>
-              <span className='text-sm font-medium'>
-                {t('Models ({{count}})', { count: routes.length })}
-              </span>
-              <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
-                <PopoverTrigger
-                  render={
-                    <Button
-                      type='button'
-                      variant='outline'
-                      size='sm'
-                      disabled={tokenId === undefined || isChanging}
-                    />
-                  }
-                >
-                  <Plus data-icon='inline-start' aria-hidden='true' />
-                  {t('Add model')}
-                </PopoverTrigger>
-                <PopoverContent
-                  className='w-[min(24rem,calc(100vw-2rem))] p-0'
-                  align='end'
-                >
-                  <Command>
-                    <CommandInput placeholder={t('Search models')} />
-                    <CommandList>
-                      <CommandEmpty>
-                        {market.isLoading
-                          ? t('Loading...')
-                          : t('No models to add')}
-                      </CommandEmpty>
-                      {addableModels.map((model) => (
-                        <CommandItem
-                          key={model.model_name}
-                          value={model.model_name}
-                          onSelect={() => handleAddModel(model.model_name)}
-                        >
-                          <span className='min-w-0 flex-1 truncate font-mono'>
-                            {model.model_name}
-                          </span>
-                          <span className='text-muted-foreground shrink-0 font-mono text-xs'>
-                            {`×${formatRatioValue(model.min_ratio)}`}
-                          </span>
-                        </CommandItem>
-                      ))}
-                    </CommandList>
-                  </Command>
-                </PopoverContent>
-              </Popover>
-            </div>
-
-            {routesQuery.isLoading && <Skeleton className='h-24 w-full' />}
-            {!routesQuery.isLoading && routes.length === 0 && (
-              <div className='text-muted-foreground rounded-md border border-dashed p-6 text-center text-sm'>
-                {t('No models yet. Click "Add model" to start.')}
-              </div>
-            )}
-
-            <div className='flex flex-col gap-3'>
-              {routes.map((route) => (
-                <RouteModelBlock
-                  key={route.model}
-                  route={route}
-                  marketModel={marketModels.get(route.model)}
-                  isMarketLoading={market.isLoading}
-                  actions={actions}
-                  defaultExpanded={route.model === justAdded}
-                  onRemoveModel={handleRemoveModel}
+              <div className='bg-muted/20 flex items-center justify-between gap-3 rounded-lg border px-3 py-2'>
+                <div className='flex flex-col gap-0.5'>
+                  <span className='text-sm font-medium'>{t('Auto route')}</span>
+                  <span className='text-muted-foreground text-xs'>
+                    {t('Use fallback IDs when a request fails.')}
+                  </span>
+                </div>
+                <Switch
+                  checked={autoRoute}
+                  disabled={routesQuery.isLoading || isChanging}
+                  onCheckedChange={handleAutoRoute}
                 />
-              ))}
-            </div>
+              </div>
+
+              <div className='flex items-center justify-between gap-3'>
+                <span className='text-sm font-medium'>
+                  {t('Models ({{count}})', { count: routes.length })}
+                </span>
+                <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
+                  <PopoverTrigger
+                    render={
+                      <Button
+                        type='button'
+                        variant='outline'
+                        size='sm'
+                        disabled={tokenId === undefined || isChanging}
+                      />
+                    }
+                  >
+                    <Plus data-icon='inline-start' aria-hidden='true' />
+                    {t('Add model')}
+                  </PopoverTrigger>
+                  <PopoverContent
+                    className='w-[min(24rem,calc(100vw-2rem))] p-0'
+                    align='end'
+                  >
+                    <Command>
+                      <CommandInput placeholder={t('Search models')} />
+                      <CommandList>
+                        <CommandEmpty>
+                          {market.isLoading
+                            ? t('Loading...')
+                            : t('No models to add')}
+                        </CommandEmpty>
+                        {addableModels.map((model) => (
+                          <CommandItem
+                            key={model.model_name}
+                            value={model.model_name}
+                            onSelect={() => handleAddModel(model.model_name)}
+                          >
+                            <span className='min-w-0 flex-1 truncate font-mono'>
+                              {model.model_name}
+                            </span>
+                            <span className='text-muted-foreground shrink-0 font-mono text-xs'>
+                              {`×${formatRatioValue(model.min_ratio)}`}
+                            </span>
+                          </CommandItem>
+                        ))}
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+              </div>
+
+              {routesQuery.isLoading && <Skeleton className='h-24 w-full' />}
+              {!routesQuery.isLoading && routes.length === 0 && (
+                <div className='text-muted-foreground rounded-md border border-dashed p-6 text-center text-sm'>
+                  {t('No models yet. Click "Add model" to start.')}
+                </div>
+              )}
+
+              <div className='flex flex-col gap-3'>
+                {routes.map((route) => (
+                  <RouteModelBlock
+                    key={route.model}
+                    route={route}
+                    marketModel={marketModels.get(route.model)}
+                    isMarketLoading={market.isLoading}
+                    actions={actions}
+                    defaultExpanded={route.model === justAdded}
+                    onRemoveModel={handleRemoveModel}
+                  />
+                ))}
+              </div>
             </>
           )}
         </section>

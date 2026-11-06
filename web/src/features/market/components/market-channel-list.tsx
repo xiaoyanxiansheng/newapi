@@ -30,7 +30,9 @@ import { MarketListingRow } from './market-listing-row'
 
 /** A channel that is still in the key's route but no longer in the market. */
 export type UnavailableChannel = {
+  billing_mode?: string
   channel_id: number
+  listing_id?: number
   ratio: number
 }
 
@@ -45,6 +47,7 @@ type MarketChannelListProps = {
    * channels' positions.
    */
   routeOrder?: number[]
+  listingOrder?: number[]
   actions: MarketActions
 }
 
@@ -58,11 +61,11 @@ export function UnavailableChannelRow(props: {
 
   return (
     <div className='flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2.5 @4xl:pl-6'>
-      <span className='text-sm font-semibold'>
-        {t('Channel #{{id}}', { id: channel.channel_id })}
-      </span>
+      <span className='text-sm font-semibold'>{t('Unavailable ID')}</span>
       <span className='text-muted-foreground font-mono text-xs'>
-        {formatRatio(channel.ratio)}
+        {channel.billing_mode === 'tiered_expr'
+          ? t('Dynamic Pricing')
+          : formatRatio(channel.ratio)}
       </span>
       <Badge variant='destructive'>{t('Unavailable')}</Badge>
       <Button
@@ -71,7 +74,13 @@ export function UnavailableChannelRow(props: {
         className='ml-auto'
         aria-label={t('Remove')}
         disabled={actions.busy}
-        onClick={() => actions.onLeave(props.modelName, channel.channel_id)}
+        onClick={() =>
+          actions.onLeave(
+            props.modelName,
+            channel.channel_id,
+            channel.listing_id
+          )
+        }
       >
         <Trash2 data-icon='inline-start' />
         {t('Remove')}
@@ -100,15 +109,21 @@ export function MarketChannelList(props: MarketChannelListProps) {
   )
 
   const moveStateOf = (channel: MarketChannel): MoveState => {
-    const index = order.indexOf(channel.channel_id)
-    return { canUp: index > 0, canDown: index >= 0 && index < order.length - 1 }
+    const positions = props.listingOrder ?? order
+    const index = positions.indexOf(
+      props.listingOrder ? channel.listing_id : channel.channel_id
+    )
+    return {
+      canUp: index > 0,
+      canDown: index >= 0 && index < positions.length - 1,
+    }
   }
 
   return (
     <div className='divide-y'>
       {sorted.map((channel) => (
         <MarketListingRow
-          key={channel.channel_id}
+          key={channel.listing_id}
           model={model}
           channel={channel}
           variant='channel'
@@ -118,7 +133,7 @@ export function MarketChannelList(props: MarketChannelListProps) {
       ))}
       {(props.unavailable ?? []).map((channel) => (
         <UnavailableChannelRow
-          key={channel.channel_id}
+          key={channel.listing_id ?? channel.channel_id}
           modelName={model.model_name}
           channel={channel}
           actions={props.actions}

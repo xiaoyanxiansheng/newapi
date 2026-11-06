@@ -23,8 +23,10 @@ import { useTranslation } from 'react-i18next'
 import { SectionPageLayout } from '@/components/layout'
 import { ApiKeyDialog } from '@/features/keys/components/api-key-dialog'
 
-import { MarketBrands } from './components/market-brands'
+import { MarketBrands, type BrandRegion } from './components/market-brands'
 import { MarketList } from './components/market-list'
+import { MarketModelSelector } from './components/market-model-selector'
+import { MarketResultFilters } from './components/market-result-filters'
 import { MarketToolbar } from './components/market-toolbar'
 import { NoKeyNotice } from './components/no-key-notice'
 import { useMarketKeys } from './hooks/use-market-keys'
@@ -32,6 +34,8 @@ import { useMarketModels } from './hooks/use-market-models'
 import {
   buildVendorSections,
   filterMarketModels,
+  getMarketBaseModelName,
+  type MarketSort,
   sortMarketModels,
 } from './lib/market-helpers'
 import type { MarketActions } from './types'
@@ -43,7 +47,10 @@ export function Market() {
   const search = route.useSearch()
   const [query, setQuery] = useState('')
   const [vendorId, setVendorId] = useState<number | null>(null)
+  const [region, setRegion] = useState<BrandRegion>('all')
+  const [modelName, setModelName] = useState<string | null>(null)
   const [routerOpen, setRouterOpen] = useState(false)
+  const [sort, setSort] = useState<MarketSort>('price')
 
   const keys = useMarketKeys(search.key)
   const tokenId = keys.selectedKey?.id ?? null
@@ -53,9 +60,29 @@ export function Market() {
     () => buildVendorSections(market.vendors, market.models),
     [market.vendors, market.models]
   )
+  const selectableModels = useMemo(
+    () =>
+      sortMarketModels(
+        filterMarketModels(market.models, '', vendorId).filter(
+          (model) =>
+            region === 'all' ||
+            market.vendors.find((vendor) => vendor.id === model.vendor_id)
+              ?.region === region
+        )
+      ),
+    [market.models, market.vendors, vendorId, region]
+  )
   const visibleModels = useMemo(
-    () => sortMarketModels(filterMarketModels(market.models, query, vendorId)),
-    [market.models, query, vendorId]
+    () =>
+      sortMarketModels(
+        filterMarketModels(selectableModels, query, null).filter(
+          (model) =>
+            modelName === null ||
+            getMarketBaseModelName(model.model_name) === modelName
+        ),
+        sort
+      ),
+    [selectableModels, query, modelName, sort]
   )
 
   const { join, leave, isMutating } = market
@@ -63,11 +90,11 @@ export function Market() {
     () => ({
       tokenId,
       busy: isMutating,
-      onJoin: (model, channelId) => {
-        if (tokenId !== null) join({ tokenId, model, channelId })
+      onJoin: (model, channelId, listingId) => {
+        if (tokenId !== null) join({ tokenId, model, channelId, listingId })
       },
-      onLeave: (model, channelId) => {
-        if (tokenId !== null) leave({ tokenId, model, channelId })
+      onLeave: (model, channelId, listingId) => {
+        if (tokenId !== null) leave({ tokenId, model, channelId, listingId })
       },
     }),
     [tokenId, isMutating, join, leave]
@@ -79,16 +106,40 @@ export function Market() {
     <SectionPageLayout>
       <SectionPageLayout.Title>{t('Model Plaza')}</SectionPageLayout.Title>
       <SectionPageLayout.Content>
-        <div className='flex flex-col gap-4'>
+        <div className='mx-auto flex w-full max-w-[1440px] flex-col gap-3 sm:gap-4'>
+          <p className='text-muted-foreground max-w-2xl text-sm'>
+            {t(
+              'Find the right model. Compare scores and output prices, then connect it to your API key.'
+            )}
+          </p>
           {hasNoKey && (
             <NoKeyNotice
               isCreating={keys.isCreating}
               onCreate={keys.createKey}
             />
           )}
+          <div className='hwjai-market-selection'>
+            <MarketBrands
+              sections={vendorSections}
+              selectedVendorId={vendorId}
+              region={region}
+              onRegionChange={(value) => {
+                setRegion(value)
+                setVendorId(null)
+                setModelName(null)
+              }}
+              onSelect={(value) => {
+                setVendorId(value)
+                setModelName(null)
+              }}
+            />
+            <MarketModelSelector
+              models={selectableModels}
+              selected={modelName}
+              onSelect={setModelName}
+            />
+          </div>
           <MarketToolbar
-            search={query}
-            onSearchChange={setQuery}
             keys={keys.keys}
             selectedKey={keys.selectedKey}
             isCreating={keys.isCreating}
@@ -97,10 +148,15 @@ export function Market() {
             onOpenRouter={() => setRouterOpen(true)}
             showKeySelector={!hasNoKey}
           />
-          <MarketBrands
-            sections={vendorSections}
-            selectedVendorId={vendorId}
-            onSelect={setVendorId}
+          <MarketResultFilters
+            search={query}
+            onSearchChange={setQuery}
+            sort={sort}
+            onSortChange={setSort}
+            count={visibleModels.reduce(
+              (count, model) => count + model.channels.length,
+              0
+            )}
           />
           <MarketList
             models={visibleModels}
@@ -108,6 +164,7 @@ export function Market() {
             actions={actions}
             isLoading={market.isLoading}
             isFiltered={market.models.length > 0}
+            sort={sort}
           />
           <ApiKeyDialog
             open={routerOpen && tokenId !== null}

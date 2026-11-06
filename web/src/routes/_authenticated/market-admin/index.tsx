@@ -18,7 +18,6 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { createFileRoute, redirect } from '@tanstack/react-router'
 
-import { MarketAdmin } from '@/features/market-admin'
 import { ROLE } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
 
@@ -31,6 +30,6 @@ export const Route = createFileRoute('/_authenticated/market-admin/')({
         to: '/403',
       })
     }
+    throw redirect({ to: '/upstream-catalog' })
   },
-  component: MarketAdmin,
 })

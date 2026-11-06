@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -21,12 +20,6 @@ const (
 	maxProbeErrorLength       = 300
 )
 
-// Models that need non-chat requests are not probed: a chat request would report false failures.
-var marketProbeSkipKeywords = []string{
-	"image", "dall-e", "sora", "video", "veo", "kling", "seedance", "seedream", "midjourney",
-	"flux", "suno", "tts", "whisper", "audio", "realtime", "vidu", "jimeng",
-}
-
 // Failures that come from this gateway rather than from the probed channel.
 var marketProbeLocalErrorCodes = map[types.ErrorCode]struct{}{
 	types.ErrorCodeGenRelayInfoFailed:   {},
@@ -37,16 +30,7 @@ var marketProbeLocalErrorCodes = map[types.ErrorCode]struct{}{
 }
 
 func marketProbeEligible(modelName string, pricing model.Pricing) bool {
-	if pricing.QuotaType != 0 {
-		return false
-	}
-	lower := strings.ToLower(modelName)
-	for _, keyword := range marketProbeSkipKeywords {
-		if strings.Contains(lower, keyword) {
-			return false
-		}
-	}
-	return true
+	return service.MarketModelMonitorable(modelName, pricing)
 }
 
 // probeMarketListing sends one tiny request through the channel test path. The test path neither bills a
@@ -69,7 +53,7 @@ func probeMarketListing(parent context.Context, l *model.MarketListing) model.Ma
 	ctx, cancel := context.WithTimeout(context.WithValue(parent, silentChannelTestKey{}, true), marketProbeTimeout)
 	defer cancel()
 	started := time.Now()
-	outcome := testChannel(ctx, channel, userId, l.ModelName, "", shouldUseStreamForAutomaticChannelTest(channel))
+	outcome := testChannel(ctx, channel, userId, l.ModelName, l.ProbeEndpoint, true)
 	result.LatencyMs = time.Since(started).Milliseconds()
 
 	switch {
@@ -83,6 +67,28 @@ func probeMarketListing(parent context.Context, l *model.MarketListing) model.Ma
 	default:
 		result.OK = true
 		model.ObserveMarketCall(l.ChannelId, l.ModelName, true, result.LatencyMs, true)
+	}
+	if record := outcome.rawProbeUsage; record != nil {
+		record.ChannelId, record.ModelName, record.At, record.Success = l.ChannelId, l.ModelName, result.At, result.OK
+		if record.TotalTokens != nil {
+			result.Tokens = *record.TotalTokens
+		}
+		if err := model.SaveMarketProbeUsage(record); err != nil {
+			common.SysError("save market probe usage failed: " + err.Error())
+		}
+	}
+	// Classify the full error before display truncation. Local gateway errors
+	// cannot clear a previously confirmed upstream client restriction.
+	requiresClaudeCode := service.ClaudeCodeClientRequired(l.ModelName, result.Error)
+	upstreamResult := result.OK
+	if outcome.newAPIError != nil {
+		_, local := marketProbeLocalErrorCodes[outcome.newAPIError.GetErrorCode()]
+		upstreamResult = !local
+	}
+	if upstreamResult || requiresClaudeCode {
+		if err := model.SetMarketListingProbeRequiresClaudeCode(l.ChannelId, l.ModelName, requiresClaudeCode); err != nil {
+			common.SysError("save market probe client restriction failed: " + err.Error())
+		}
 	}
 	if len(result.Error) > maxProbeErrorLength {
 		result.Error = result.Error[:maxProbeErrorLength]
@@ -99,7 +105,7 @@ func runMarketProbeRound(interval time.Duration) {
 
 	var targets []*model.MarketListing
 	for _, l := range model.GetAllMarketListingsCached() {
-		if _, ok := service.SellableListing(l); !ok {
+		if _, ok := service.MonitorableListing(l); !ok {
 			continue
 		}
 		if !marketProbeEligible(l.ModelName, pricingByModel[l.ModelName]) {
@@ -130,7 +136,7 @@ func runMarketProbeRound(interval time.Duration) {
 	common.SysLog("market probe round finished, probed " + strconv.Itoa(len(targets)) + " listings")
 }
 
-// StartMarketProbe probes every sellable listing in the background. MARKET_PROBE_INTERVAL_MINUTES
+// StartMarketProbe monitors listed and paused listings in the background. MARKET_PROBE_INTERVAL_MINUTES
 // overrides the 30 minute default, 0 disables probing.
 func StartMarketProbe() {
 	if !common.IsMasterNode {

@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { createFileRoute, redirect } from '@tanstack/react-router'
+import { z } from 'zod'
 
 import { Dashboard } from '@/features/dashboard'
 import {
@@ -35,4 +36,7 @@ export const Route = createFileRoute('/_authenticated/dashboard/$section')({
     }
   },
   component: Dashboard,
+  validateSearch: z.object({
+    view: z.enum(['summary', 'trends']).optional().catch('summary'),
+  }),
 })

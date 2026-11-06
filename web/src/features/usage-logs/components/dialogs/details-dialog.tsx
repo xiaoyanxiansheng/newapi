@@ -78,6 +78,10 @@ import {
   renderAuditContent,
 } from '../../lib/format'
 import {
+  formatLogListingId,
+  formatLogListingChain,
+} from '../../lib/listing-identity'
+import {
   getLogTypeConfig,
   isPerCallBilling,
   isTimingLogType,
@@ -602,9 +606,9 @@ export function DetailsDialog(props: DetailsDialogProps) {
     props.log.type !== 6 &&
     (other?.request_path || conversionChain.length > 0)
 
-  const useChannel = other?.admin_info?.use_channel
-  const channelChain =
-    useChannel && useChannel.length > 0 ? useChannel.join(' → ') : undefined
+  const channelChain = formatLogListingChain(
+    other?.admin_info?.use_market_listings
+  )
   const reasoningEffortVariant = getReasoningEffortVariant(
     other?.reasoning_effort
   )
@@ -654,13 +658,13 @@ export function DetailsDialog(props: DetailsDialogProps) {
             />
           )}
 
-          {props.isAdmin && props.log.channel > 0 && (
+          {(props.log.market_listing_id ?? 0) > 0 && (
             <DetailRow
-              label={t('Channel')}
+              label={t('Model ID')}
               value={
                 <span>
-                  {props.log.channel}
-                  {props.log.channel_name && (
+                  {formatLogListingId(props.log.market_listing_id)}
+                  {props.isAdmin && props.log.channel_name && (
                     <span className='text-muted-foreground'>
                       {' '}
                       ({props.log.channel_name})

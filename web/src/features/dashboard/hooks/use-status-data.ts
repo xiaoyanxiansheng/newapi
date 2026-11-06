@@ -66,9 +66,21 @@ export function useDashboardContentVisibility() {
   const hasStatus = Boolean(status)
 
   return {
-    apiInfo: hasStatus && status?.api_info_enabled !== false,
-    announcements: hasStatus && status?.announcements_enabled !== false,
-    faq: hasStatus && status?.faq_enabled !== false,
+    apiInfo:
+      hasStatus &&
+      status?.api_info_enabled !== false &&
+      Array.isArray(status?.api_info) &&
+      status.api_info.length > 0,
+    announcements:
+      hasStatus &&
+      status?.announcements_enabled !== false &&
+      Array.isArray(status?.announcements) &&
+      status.announcements.length > 0,
+    faq:
+      hasStatus &&
+      status?.faq_enabled !== false &&
+      Array.isArray(status?.faq) &&
+      status.faq.length > 0,
     uptimeKuma: hasStatus && status?.uptime_kuma_enabled !== false,
   }
 }

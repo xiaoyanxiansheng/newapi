@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 
@@ -48,6 +48,7 @@ import {
 type SidebarModulesSectionProps = {
   config: SidebarModulesAdminConfig
   initialSerialized: string
+  taskEnabled?: boolean
 }
 
 type SidebarFormValues = SidebarModulesAdminConfig
@@ -60,9 +61,14 @@ const toTitleCase = (value: string) =>
 export function SidebarModulesSection({
   config,
   initialSerialized,
+  taskEnabled,
 }: SidebarModulesSectionProps) {
   const { t } = useTranslation()
   const updateOption = useUpdateOption()
+  const [tasksAllowed, setTasksAllowed] = useState(taskEnabled !== false)
+  useEffect(() => {
+    setTasksAllowed(taskEnabled !== false)
+  }, [taskEnabled])
 
   const sectionMeta: Record<string, { title: string; description: string }> = {
     chat: {
@@ -188,6 +194,28 @@ export function SidebarModulesSection({
     <SettingsSection title={t('Sidebar modules')}>
       <Form {...form}>
         <SettingsForm onSubmit={form.handleSubmit(onSubmit)}>
+          <SettingsSwitchItem>
+            <SettingsSwitchContent>
+              <p className='text-sm font-medium'>{t('Task log access')}</p>
+              <p className='text-muted-foreground text-sm'>
+                {t(
+                  'Allow users to view asynchronous task records. Turning this off keeps historical data and removes user access.'
+                )}
+              </p>
+            </SettingsSwitchContent>
+            <Switch
+              aria-label={t('Task log access')}
+              checked={tasksAllowed}
+              disabled={updateOption.isPending}
+              onCheckedChange={async (value) => {
+                const result = await updateOption
+                  .mutateAsync({ key: 'TaskEnabled', value: String(value) })
+                  .catch(() => null)
+                if (!result) return
+                if (result.success) setTasksAllowed(value)
+              }}
+            />
+          </SettingsSwitchItem>
           <SettingsPageFormActions
             onSave={form.handleSubmit(onSubmit)}
             onReset={resetToDefault}

@@ -40,10 +40,24 @@ func modelHasBillingConfig(modelName string) bool {
 	return ok && strings.TrimSpace(expr) != ""
 }
 
+// MonitorableListing also allows paused listings to be checked for recovery.
+// It never changes the listing's routing state or includes unpublished models.
+func MonitorableListing(l *model.MarketListing) (*model.Channel, bool) {
+	if l == nil {
+		return nil, false
+	}
+	probeTarget := *l
+	probeTarget.Enabled = true
+	return SellableListing(&probeTarget)
+}
+
 // SellableListing returns the channel behind a listing when it can serve
 // traffic: listed, priced, channel enabled and still serving the model.
 func SellableListing(l *model.MarketListing) (*model.Channel, bool) {
 	if l == nil || !l.Enabled || l.Ratio <= 0 {
+		return nil, false
+	}
+	if !model.UpstreamChannelUsable(l.ChannelId, l.ModelName) {
 		return nil, false
 	}
 	ch, err := model.CacheGetChannel(l.ChannelId)
@@ -57,7 +71,7 @@ func SellableListing(l *model.MarketListing) (*model.Channel, bool) {
 			break
 		}
 	}
-	if !found || !modelHasBillingConfig(l.ModelName) {
+	if !found || (!l.HasPublishedPrice() && !modelHasBillingConfig(l.ModelName)) {
 		return nil, false
 	}
 	return ch, true
@@ -98,12 +112,23 @@ func RouteCandidates(c *gin.Context, modelName string) ([]RouteCandidate, error)
 	if len(ids) == 0 {
 		return nil, ErrRouteUnavailable
 	}
+	route := model.TokenRoute{Model: modelName, Channels: ids}
+	if entries, exists := c.Get("token_route_entries"); exists {
+		if rows, valid := entries.([]model.TokenRoute); valid {
+			for _, row := range rows {
+				if row.Model == modelName {
+					route = row
+					break
+				}
+			}
+		}
+	}
 	if !tokenAutoRoute(c) {
 		ids = ids[:1]
 	}
 	out := make([]RouteCandidate, 0, len(ids))
-	for _, id := range ids {
-		listing := model.GetMarketListing(id, modelName)
+	for index := range ids {
+		listing := route.Listing(index)
 		if ch, ok := SellableListing(listing); ok {
 			out = append(out, RouteCandidate{Channel: ch, Listing: listing})
 		}
@@ -121,6 +146,16 @@ func PrepareRoute(c *gin.Context, modelName string) ([]RouteCandidate, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Freeze every candidate's contract for this request. Admin refresh/apply
+	// during a retry must not change the price of an in-flight request.
+	contracts := make(map[int]model.MarketListing, len(cands))
+	listingContracts := make(map[int]model.MarketListing, len(cands))
+	for _, cand := range cands {
+		contracts[cand.Channel.Id] = *cand.Listing
+		listingContracts[cand.Listing.Id] = *cand.Listing
+	}
+	c.Set("market_billing_contracts", contracts)
+	c.Set("market_listing_contracts", listingContracts)
 	maxRatio := 0.0
 	for _, cand := range cands {
 		if cand.Listing.Ratio > maxRatio {
@@ -140,12 +175,38 @@ func SelectRouteChannel(c *gin.Context, modelName string) (*model.Channel, error
 		return nil, err
 	}
 	used := make(map[string]struct{})
-	for _, id := range c.GetStringSlice("use_channel") {
+	for _, id := range c.GetStringSlice("market_used_listings") {
 		used[id] = struct{}{}
 	}
 	for _, cand := range cands {
-		if _, tried := used[strconv.Itoa(cand.Channel.Id)]; tried {
+		key := strconv.Itoa(cand.Listing.Id)
+		if _, tried := used[key]; tried {
 			continue
+		}
+		if len(c.GetStringSlice("market_used_listings")) == 0 {
+			alreadyUsed := false
+			for _, id := range c.GetStringSlice("use_channel") {
+				if id == strconv.Itoa(cand.Channel.Id) {
+					alreadyUsed = true
+					break
+				}
+			}
+			if alreadyUsed {
+				continue
+			}
+		}
+		c.Set("market_used_listings", append(c.GetStringSlice("market_used_listings"), key))
+		c.Set("market_selected_listing", *cand.Listing)
+		if value, exists := c.Get("market_listing_contracts"); exists {
+			if frozen, ok := value.(map[int]model.MarketListing); ok {
+				if listing, found := frozen[cand.Listing.Id]; found {
+					if value, exists := c.Get("market_billing_contracts"); exists {
+						if contracts, ok := value.(map[int]model.MarketListing); ok {
+							contracts[cand.Channel.Id] = listing
+						}
+					}
+				}
+			}
 		}
 		common.SetContextKey(c, constant.ContextKeyRouteRatio, cand.Listing.Ratio)
 		return cand.Channel, nil
@@ -196,12 +257,9 @@ func GetRouteRatio(c *gin.Context) (float64, bool) {
 func GetRouteModels(c *gin.Context) []string {
 	routes := tokenRoutesFromContext(c)
 	names := make([]string, 0, len(routes))
-	for name, ids := range routes {
-		for _, id := range ids {
-			if _, ok := SellableListing(model.GetMarketListing(id, name)); ok {
-				names = append(names, name)
-				break
-			}
+	for name := range routes {
+		if _, err := RouteCandidates(c, name); err == nil {
+			names = append(names, name)
 		}
 	}
 	sort.Strings(names)

@@ -94,6 +94,8 @@ export function UptimePanel() {
       })
   }
 
+  if (!loading && groups.length === 0) return null
+
   return (
     <PanelWrapper
       title={

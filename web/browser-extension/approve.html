@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>hwjai 上游授权</title>
+    <link rel="stylesheet" href="approve.css" />
+  </head>
+  <body>
+    <main>
+      <h1>授权读取这些网站</h1>
+      <p>
+        使用此浏览器中已有的登录，读取现有 Key、Key 累计消费和网站余额。登录
+        Cookie 留在浏览器中。不会创建 Key、充值或修改上游线路。
+      </p>
+      <ul id="websites"></ul>
+      <button id="authorize" disabled>一键授权并读取</button>
+      <p id="status" role="status">正在读取授权请求…</p>
+      <p class="muted">
+        若网站登录过期，请回到上游页面完成登录，再在 hwjai 点击“一键授权”。
+      </p>
+      <footer>
+        基于 new-api · Copyright (C) 2023-2026 QuantumNous · AGPL-3.0
+      </footer>
+    </main>
+    <script type="module" src="approve.js"></script>
+  </body>
+</html>

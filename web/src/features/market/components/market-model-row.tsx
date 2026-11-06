@@ -16,50 +16,44 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { memo, useState } from 'react'
+import { memo } from 'react'
 
 import type { MarketActions, MarketModel, MarketVendor } from '../types'
-import { MarketChannelList } from './market-channel-list'
 import { MarketListingRow } from './market-listing-row'
 
-type MarketModelRowProps = {
+export const MarketModelRow = memo(function MarketModelRow(props: {
   model: MarketModel
   vendor?: MarketVendor
   actions: MarketActions
-}
-
-export const MarketModelRow = memo(function MarketModelRow(
-  props: MarketModelRowProps
-) {
-  const [expanded, setExpanded] = useState(false)
-
-  const { model } = props
-  const channels = model.channels ?? []
-  const lowest = channels[0]
-  if (!lowest) return null
-
-  const joinedElsewhere = lowest.joined
-    ? undefined
-    : channels.find((channel) => channel.joined)
-
+}) {
   return (
-    <div className='bg-card overflow-hidden rounded-xl border'>
-      <MarketListingRow
-        model={model}
-        channel={lowest}
-        variant='model'
-        vendor={props.vendor}
-        actions={props.actions}
-        channelCount={channels.length}
-        expanded={expanded}
-        onToggle={() => setExpanded((value) => !value)}
-        joinedElsewhere={joinedElsewhere}
-      />
-      {expanded && (
-        <div className='bg-muted/20 border-t'>
-          <MarketChannelList model={model} actions={props.actions} />
-        </div>
-      )}
-    </div>
+    <>
+      {props.model.channels.map((channel) => (
+        <article
+          key={channel.listing_id}
+          className='hwjai-market-row @container rounded-2xl'
+          onPointerMove={(event) => {
+            if (event.pointerType !== 'mouse') return
+            const rect = event.currentTarget.getBoundingClientRect()
+            event.currentTarget.style.setProperty(
+              '--pointer-x',
+              `${event.clientX - rect.left}px`
+            )
+            event.currentTarget.style.setProperty(
+              '--pointer-y',
+              `${event.clientY - rect.top}px`
+            )
+          }}
+        >
+          <MarketListingRow
+            model={props.model}
+            channel={channel}
+            variant='model'
+            vendor={props.vendor}
+            actions={props.actions}
+          />
+        </article>
+      ))}
+    </>
   )
 })

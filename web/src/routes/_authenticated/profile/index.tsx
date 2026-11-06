@@ -17,9 +17,32 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { createFileRoute } from '@tanstack/react-router'
+import { z } from 'zod'
 
 import { Profile } from '@/features/profile'
+import { Wallet } from '@/features/wallet'
+import { useIsSidebarModuleVisible } from '@/hooks/use-sidebar-config'
 
 export const Route = createFileRoute('/_authenticated/profile/')({
-  component: Profile,
+  component: AccountRoute,
+  validateSearch: z.object({
+    section: z
+      .enum(['overview', 'profile', 'wallet', 'preferences'])
+      .optional()
+      .catch('overview'),
+    show_history: z.boolean().optional(),
+  }),
 })
+
+function AccountRoute() {
+  const { section, show_history } = Route.useSearch()
+  const showProfile = useIsSidebarModuleVisible('/profile')
+  const showWallet = useIsSidebarModuleVisible('/wallet')
+  return showWallet && (section === 'wallet' || !showProfile) ? (
+    <Wallet initialShowHistory={show_history} />
+  ) : (
+    <Profile
+      section={section === 'wallet' ? 'overview' : (section ?? 'overview')}
+    />
+  )
+}

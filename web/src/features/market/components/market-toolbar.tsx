@@ -16,19 +16,16 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Route as RouteIcon, Search } from 'lucide-react'
+import { Route as RouteIcon, KeyRound } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 
 import type { MarketKey } from '../types'
 import { DisabledHint } from './disabled-hint'
 import { KeySelector } from './key-selector'
 
 type MarketToolbarProps = {
-  search: string
-  onSearchChange: (value: string) => void
   keys: MarketKey[]
   selectedKey: MarketKey | null
   isCreating: boolean
@@ -37,27 +34,15 @@ type MarketToolbarProps = {
   onOpenRouter: () => void
   showKeySelector: boolean
 }
-
-/** Search, API key selector and the router settings entry. */
 export function MarketToolbar(props: MarketToolbarProps) {
   const { t } = useTranslation()
   const noKey = props.selectedKey === null
-
   return (
-    <div className='flex flex-wrap items-center gap-x-3 gap-y-2'>
-      <div className='relative w-full sm:w-72'>
-        <Search
-          className='text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2'
-          aria-hidden='true'
-        />
-        <Input
-          value={props.search}
-          onChange={(event) => props.onSearchChange(event.target.value)}
-          placeholder={t('Search model name or description...')}
-          aria-label={t('Search model name or description...')}
-          className='pl-8'
-        />
-      </div>
+    <section aria-label={t('API Access')} className='hwjai-market-access'>
+      <span className='text-primary flex items-center gap-2 text-xs font-semibold'>
+        <KeyRound className='size-4' aria-hidden='true' />
+        {t('API Access')}
+      </span>
       {props.showKeySelector && (
         <KeySelector
           keys={props.keys}
@@ -67,20 +52,23 @@ export function MarketToolbar(props: MarketToolbarProps) {
           onCreate={props.onCreateKey}
         />
       )}
-      <DisabledHint
-        active={noKey}
-        hint={t('Select or create an API key first')}
-      >
-        <Button
-          variant='outline'
-          size='sm'
-          disabled={noKey}
-          onClick={props.onOpenRouter}
+      <div className='sm:ml-auto'>
+        <DisabledHint
+          active={noKey}
+          hint={t('Select or create an API key first')}
         >
-          <RouteIcon data-icon='inline-start' />
-          {t('Model router settings')}
-        </Button>
-      </DisabledHint>
-    </div>
+          <Button
+            variant='outline'
+            size='sm'
+            disabled={noKey}
+            onClick={props.onOpenRouter}
+            className='rounded-lg'
+          >
+            <RouteIcon data-icon='inline-start' />
+            {t('Model router settings')}
+          </Button>
+        </DisabledHint>
+      </div>
+    </section>
   )
 }

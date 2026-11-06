@@ -203,6 +203,27 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			break
 		}
 		addUsedChannel(c, channel.Id)
+		if service.IsRouteMode(c) {
+			newAPIError = nil
+			// Retries may select a different billing expression or switch between
+			// static and dynamic pricing. Re-estimate before sending, and increase
+			// the reservation before an expensive fallback can reach the upstream.
+			selectedPrice, priceErr := helper.ModelPriceHelper(c, relayInfo, tokens, meta)
+			if priceErr != nil {
+				newAPIError = types.NewErrorWithStatusCode(priceErr, types.ErrorCodeModelPriceError, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
+				break
+			}
+			if relayInfo.TieredBillingSnapshot == nil && !selectedPrice.FreeModel {
+				if relayInfo.Billing == nil {
+					newAPIError = service.PreConsumeBilling(c, selectedPrice.QuotaToPreConsume, relayInfo)
+				} else if reserveErr := relayInfo.Billing.Reserve(selectedPrice.QuotaToPreConsume); reserveErr != nil {
+					newAPIError = types.NewError(reserveErr, types.ErrorCodeUpdateDataError, types.ErrOptionWithSkipRetry())
+				}
+				if newAPIError != nil {
+					break
+				}
+			}
+		}
 		if billingErr := service.PrepareTieredBillingForSelectedGroup(c, relayInfo); billingErr != nil {
 			newAPIError = billingErr
 			break
@@ -232,6 +253,10 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			newAPIError = relayHandler(c, relayInfo)
 		}
 
+		marketModelName := c.GetString("market_access_model")
+		if marketModelName == "" {
+			marketModelName = relayInfo.OriginModelName
+		}
 		if newAPIError == nil {
 			relayInfo.LastError = nil
 			// Time to first response when streaming, otherwise the whole attempt.
@@ -239,14 +264,14 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			if relayInfo.FirstResponseTime.After(attemptStart) {
 				latency = relayInfo.FirstResponseTime.Sub(attemptStart)
 			}
-			model.ObserveMarketCall(channel.Id, relayInfo.OriginModelName, true, latency.Milliseconds(), false)
+			model.ObserveMarketCall(channel.Id, marketModelName, true, latency.Milliseconds(), false)
 			return
 		}
 
 		newAPIError = service.NormalizeViolationFeeError(newAPIError)
 		relayInfo.LastError = newAPIError
 		if isChannelSideFailure(newAPIError) {
-			model.ObserveMarketCall(channel.Id, relayInfo.OriginModelName, false, 0, false)
+			model.ObserveMarketCall(channel.Id, marketModelName, false, 0, false)
 		}
 
 		processChannelError(c, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError)

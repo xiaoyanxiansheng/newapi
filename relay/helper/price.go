@@ -84,8 +84,34 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 
 	groupRatioInfo := HandleGroupRatio(c, info)
 
+	publishedFixedRequest := false
+	info.TieredBillingSnapshot = nil
+	if value, ok := c.Get("market_billing_contracts"); ok {
+		contracts, ok := value.(map[int]model.MarketListing)
+		if !ok {
+			return hosttypes.PriceData{}, fmt.Errorf("invalid selected billing contract")
+		}
+		listing, ok := contracts[c.GetInt("channel_id")]
+		if !ok {
+			return hosttypes.PriceData{}, fmt.Errorf("selected billing contract is missing")
+		}
+		if listing.HasExpressionContract() {
+			groupRatioInfo = hosttypes.GroupRatioInfo{GroupRatio: 1, GroupSpecialRatio: -1}
+			return modelPriceHelperTieredExpression(c, info, promptTokens, meta, groupRatioInfo, listing.BillingExpr)
+		}
+		if listing.BillingMode == "fixed_request" {
+			publishedFixedRequest = true
+			price, err := model.ParseUpstreamAmount(listing.BillingExpr)
+			if err != nil {
+				return hosttypes.PriceData{}, err
+			}
+			modelPrice, _ = price.Float64()
+			usePrice = true
+			groupRatioInfo = hosttypes.GroupRatioInfo{GroupRatio: 1, GroupSpecialRatio: -1}
+		}
+	}
 	// Check if this model uses tiered_expr billing
-	if billing_setting.GetBillingMode(info.OriginModelName) == billing_setting.BillingModeTieredExpr {
+	if !publishedFixedRequest && billing_setting.GetBillingMode(info.OriginModelName) == billing_setting.BillingModeTieredExpr {
 		return modelPriceHelperTiered(c, info, promptTokens, meta, groupRatioInfo)
 	}
 
@@ -197,6 +223,27 @@ func ModelPriceHelperPerCall(c *gin.Context, info *relaycommon.RelayInfo) (hostt
 	groupRatioInfo := HandleGroupRatio(c, info)
 
 	modelPrice, success := ratio_setting.GetModelPrice(info.OriginModelName, true)
+	if value, ok := c.Get("market_billing_contracts"); ok {
+		contracts, valid := value.(map[int]model.MarketListing)
+		if !valid {
+			return hosttypes.PriceData{}, fmt.Errorf("invalid selected billing contract")
+		}
+		listing, exists := contracts[c.GetInt("channel_id")]
+		if !exists {
+			return hosttypes.PriceData{}, fmt.Errorf("selected billing contract is missing")
+		}
+		if listing.BillingMode == "fixed_request" {
+			price, err := model.ParseUpstreamAmount(listing.BillingExpr)
+			if err != nil {
+				return hosttypes.PriceData{}, err
+			}
+			modelPrice, _ = price.Float64()
+			success = true
+			groupRatioInfo = hosttypes.GroupRatioInfo{GroupRatio: 1, GroupSpecialRatio: -1}
+		} else if listing.HasExpressionContract() {
+			return hosttypes.PriceData{}, fmt.Errorf("token billing contract cannot be used for per-call billing")
+		}
+	}
 	usePrice := success
 	var modelRatio float64
 
@@ -281,6 +328,10 @@ func modelPriceHelperTiered(c *gin.Context, info *relaycommon.RelayInfo, promptT
 		return hosttypes.PriceData{}, fmt.Errorf("model %s is configured as tiered_expr but has no billing expression", info.OriginModelName)
 	}
 
+	return modelPriceHelperTieredExpression(c, info, promptTokens, meta, groupRatioInfo, exprStr)
+}
+
+func modelPriceHelperTieredExpression(c *gin.Context, info *relaycommon.RelayInfo, promptTokens int, meta *types.TokenCountMeta, groupRatioInfo hosttypes.GroupRatioInfo, exprStr string) (hosttypes.PriceData, error) {
 	estimatedCompletionTokens := meta.MaxTokens
 	if estimatedCompletionTokens == 0 && groupRatioInfo.GroupRatio != 0 {
 		estimatedCompletionTokens = defaultTieredPreConsumeMaxTokens

@@ -10,8 +10,37 @@ import (
 
 // TokenRoute is one model with its ordered channel list inside a token.
 type TokenRoute struct {
-	Model    string `json:"model"`
-	Channels []int  `json:"channels"`
+	Model      string `json:"model"`
+	Channels   []int  `json:"channels"`
+	ListingIDs []int  `json:"listing_ids,omitempty"`
+}
+
+func (r TokenRoute) ListingID(index int) int {
+	if index < len(r.ListingIDs) {
+		return r.ListingIDs[index]
+	}
+	return 0
+}
+
+func (r TokenRoute) Listing(index int) *MarketListing {
+	if id := r.ListingID(index); id > 0 {
+		listing := GetMarketListingByID(id)
+		if listing != nil && listing.ChannelId == r.Channels[index] && common.MarketBaseModel(listing.ModelName) == r.Model {
+			return listing
+		}
+		return nil
+	}
+	return GetMarketListing(r.Channels[index], r.Model)
+}
+
+func (r *TokenRoute) AppendChannel(channelID, listingID int) {
+	if listingID > 0 || len(r.ListingIDs) > 0 {
+		for len(r.ListingIDs) < len(r.Channels) {
+			r.ListingIDs = append(r.ListingIDs, 0)
+		}
+		r.ListingIDs = append(r.ListingIDs, listingID)
+	}
+	r.Channels = append(r.Channels, channelID)
 }
 
 const maxTokenRouteModels = 200
@@ -25,7 +54,7 @@ func (token *Token) GetRoutes() []TokenRoute {
 		common.SysError(fmt.Sprintf("failed to parse routes for token %d: %v", token.Id, err))
 		return nil
 	}
-	return routes
+	return normalizeRoutes(routes)
 }
 
 func (token *Token) GetRouteMap() map[string][]int {
@@ -37,20 +66,44 @@ func (token *Token) GetRouteMap() map[string][]int {
 	return m
 }
 
-// normalizeRoutes drops nameless and duplicated models. A model without channels is kept: the user
+// normalizeRoutes merges supplier aliases while retaining each listing and its order. A model without channels is kept: the user
 // added it on purpose and picks its channels later; requests for it fail with "no available channel".
 func normalizeRoutes(routes []TokenRoute) []TokenRoute {
 	out := make([]TokenRoute, 0, len(routes))
-	seen := make(map[string]struct{}, len(routes))
+	seen := make(map[string]int, len(routes))
 	for _, r := range routes {
-		if _, dup := seen[r.Model]; r.Model == "" || dup {
+		if r.Model == "" {
 			continue
 		}
-		seen[r.Model] = struct{}{}
-		if r.Channels == nil {
-			r.Channels = []int{}
+		name := common.MarketBaseModel(r.Model)
+		index, exists := seen[name]
+		if !exists {
+			index = len(out)
+			seen[name] = index
+			out = append(out, TokenRoute{Model: name, Channels: []int{}})
 		}
-		out = append(out, r)
+		for i, channelID := range r.Channels {
+			listingID := r.ListingID(i)
+			if listingID == 0 && name != r.Model {
+				if listing := GetMarketListing(channelID, r.Model); listing != nil {
+					listingID = listing.Id
+				} else {
+					// Keep an unavailable legacy alias separate rather than assigning another listing.
+					out = append(out, TokenRoute{Model: r.Model, Channels: []int{channelID}})
+					continue
+				}
+			}
+			duplicate := false
+			for j, existing := range out[index].Channels {
+				if existing == channelID && out[index].ListingID(j) == listingID {
+					duplicate = true
+					break
+				}
+			}
+			if !duplicate {
+				out[index].AppendChannel(channelID, listingID)
+			}
+		}
 	}
 	return out
 }
@@ -71,7 +124,7 @@ func (token *Token) setRoutes(routes []TokenRoute) error {
 
 // MutateTokenRoutes loads the token row under a write lock, applies fn to its
 // routes and saves them, so concurrent single-item edits do not overwrite each other.
-func MutateTokenRoutes(tokenId int, userId int, fn func(routes []TokenRoute) ([]TokenRoute, error)) (*Token, error) {
+func MutateTokenRoutes(tokenId int, userId int, fn func(routes []TokenRoute) ([]TokenRoute, error), requiredListingIDs ...int) (*Token, error) {
 	var result *Token
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		// Take the write lock first: on SQLite a read-then-write transaction fails
@@ -86,6 +139,30 @@ func MutateTokenRoutes(tokenId int, userId int, fn func(routes []TokenRoute) ([]
 		var token Token
 		if err := lockForUpdate(tx).First(&token, "id = ? and user_id = ?", tokenId, userId).Error; err != nil {
 			return err
+		}
+		// Recheck newly selected listings inside the write transaction. A cached
+		// market response must never reinsert a selection after its parent was deleted.
+		for _, id := range requiredListingIDs {
+			var listing MarketListing
+			if err := lockForUpdate(tx).First(&listing, id).Error; err != nil {
+				return err
+			}
+			var channel Channel
+			if err := lockForUpdate(tx).First(&channel, listing.ChannelId).Error; err != nil {
+				return err
+			}
+			if !listing.Enabled || listing.Ratio <= 0 || channel.Status != common.ChannelStatusEnabled {
+				return errors.New("this channel is not available in the market")
+			}
+			var sources []UpstreamSource
+			if err := lockForUpdate(tx).Where("channel_id = ?", channel.Id).Find(&sources).Error; err != nil {
+				return err
+			}
+			for _, source := range sources {
+				if err := EnsureUpstreamModelAllowed(tx, source, listing.ModelName); err != nil {
+					return err
+				}
+			}
 		}
 		next, err := fn(token.GetRoutes())
 		if err != nil {

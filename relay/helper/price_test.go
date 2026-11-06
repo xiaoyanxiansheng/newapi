@@ -6,8 +6,10 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/setting/billing_setting"
 	"github.com/QuantumNous/new-api/setting/config"
@@ -271,4 +273,83 @@ func TestModelPriceHelperRequestBillingRatiosOnlyApplyToFixedPrice(t *testing.T)
 	require.Equal(t, "QuotaFromFloat", clamp.Op)
 	require.Equal(t, common.QuotaClampOverflow, clamp.Kind)
 	require.Nil(t, info.Billing)
+}
+
+func TestModelPriceHelperUsesSelectedDynamicContractAndClearsItOnStaticFallback(t *testing.T) {
+	savedRatios := ratio_setting.ModelRatio2JSONString()
+	require.NoError(t, ratio_setting.UpdateModelRatioByJSONString("{\"gpt-4o\":1}"))
+	t.Cleanup(func() { require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(savedRatios)) })
+	gin.SetMode(gin.TestMode)
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx.Request = httptest.NewRequest("POST", "/v1/chat/completions", nil)
+	ctx.Set("channel_id", 7)
+	ctx.Set("market_billing_contracts", map[int]model.MarketListing{
+		7: {BillingMode: "tiered_expr", BillingExpr: "tier(\"base\", p * 1.21 + c * 7.26)", Ratio: 1},
+		8: {BillingMode: "tiered_expr", BillingExpr: "tier(\"base\", p * 2.42 + c * 14.52)", Ratio: 1},
+		9: {Ratio: 1},
+	})
+	info := &relaycommon.RelayInfo{OriginModelName: "gpt-4o", UsingGroup: "default", UserGroup: "default", BillingRequestInput: &billingexpr.RequestInput{Body: []byte("{}")}}
+	price, err := ModelPriceHelper(ctx, info, 1000, &types.TokenCountMeta{MaxTokens: 100})
+	require.NoError(t, err)
+	require.Equal(t, 968, price.QuotaToPreConsume)
+	first := info.TieredBillingSnapshot
+	ctx.Set("channel_id", 8)
+	price, err = ModelPriceHelper(ctx, info, 1000, &types.TokenCountMeta{MaxTokens: 100})
+	require.NoError(t, err)
+	require.Equal(t, 1936, price.QuotaToPreConsume)
+	require.NotEqual(t, first.ExprString, info.TieredBillingSnapshot.ExprString)
+	ctx.Set("channel_id", 9)
+	_, err = ModelPriceHelper(ctx, info, 1000, &types.TokenCountMeta{MaxTokens: 100})
+	require.NoError(t, err)
+	require.Nil(t, info.TieredBillingSnapshot)
+}
+
+func TestModelPriceHelperPublishedFixedPricesIgnoreMissingGlobalPricesAndGroupRatios(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx.Request = httptest.NewRequest("POST", "/v1/chat/completions", nil)
+	ctx.Set("channel_id", 7)
+	ctx.Set("market_billing_contracts", map[int]model.MarketListing{
+		7: {BillingMode: "fixed_expr", BillingExpr: `tier("base", p * 2.2 + c * 8.8 + cr * 0.22)`, Ratio: 1},
+		8: {BillingMode: "fixed_request", BillingExpr: "0.022", Ratio: 1},
+	})
+	info := &relaycommon.RelayInfo{OriginModelName: "unconfigured-upstream-fixed-price", UsingGroup: "default", UserGroup: "default", BillingRequestInput: &billingexpr.RequestInput{Body: []byte("{}")}}
+	_, configured, _ := ratio_setting.GetModelRatio(info.OriginModelName)
+	require.False(t, configured)
+	price, err := ModelPriceHelper(ctx, info, 1000, &types.TokenCountMeta{MaxTokens: 100})
+	require.NoError(t, err)
+	require.Equal(t, 1540, price.QuotaToPreConsume)
+	require.Equal(t, float64(1), price.GroupRatioInfo.GroupRatio)
+	require.NotNil(t, info.TieredBillingSnapshot)
+	settled, err := billingexpr.ComputeTieredQuota(info.TieredBillingSnapshot, billingexpr.TokenParams{P: 800, C: 100, CR: 200})
+	require.NoError(t, err)
+	require.Equal(t, 1342, settled.ActualQuotaAfterGroup)
+	ctx.Set("channel_id", 8)
+	price, err = ModelPriceHelper(ctx, info, 0, &types.TokenCountMeta{})
+	require.NoError(t, err)
+	require.True(t, price.UsePrice)
+	require.Equal(t, 11000, price.QuotaToPreConsume)
+	require.Equal(t, 0.022, price.ModelPrice)
+	require.Nil(t, info.TieredBillingSnapshot)
+	perCall, err := ModelPriceHelperPerCall(ctx, info)
+	require.NoError(t, err)
+	require.Equal(t, 11000, perCall.Quota)
+	require.Equal(t, 0.022, perCall.ModelPrice)
+	require.Equal(t, float64(1), perCall.GroupRatioInfo.GroupRatio)
+}
+
+func TestModelPriceHelperPublishedImageContractChargesImageCountOnce(t *testing.T) {
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx.Request = httptest.NewRequest("POST", "/v1/images/generations", nil)
+	ctx.Set("channel_id", 8)
+	ctx.Set("market_billing_contracts", map[int]model.MarketListing{8: {BillingMode: "fixed_request", BillingExpr: "0.055", Ratio: 1}})
+	n := uint(3)
+	request := &dto.ImageRequest{Model: "gpt-image-2", N: &n, Size: "4096x4096", Quality: "high"}
+	info := &relaycommon.RelayInfo{OriginModelName: request.Model, UsingGroup: "default", UserGroup: "default", Request: request}
+	price, err := ModelPriceHelper(ctx, info, 100, request.GetTokenCountMeta())
+	require.NoError(t, err)
+	require.True(t, price.UsePrice)
+	require.Equal(t, 0.055, price.ModelPrice)
+	require.Equal(t, 82500, price.QuotaToPreConsume)
+	require.InDelta(t, 0.165, price.ApplyOtherRatiosToFloat(price.ModelPrice), 1e-10)
 }

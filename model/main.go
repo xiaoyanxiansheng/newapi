@@ -124,6 +124,22 @@ func normalizeClickHouseDSN(dsn string) string {
 	return parsed.String()
 }
 
+func openSQLiteDatabase(path string) (*gorm.DB, error) {
+	filename, query, _ := strings.Cut(path, "?")
+	parameters, err := url.ParseQuery(query)
+	if err != nil {
+		return nil, fmt.Errorf("invalid SQLite connection options: %w", err)
+	}
+	// Readers should not prevent an account/settings write from committing.
+	// Reserve the writer before transaction reads: busy_timeout alone cannot
+	// recover a deferred transaction's read-to-write lock upgrade. The driver
+	// applies these options on every new pooled connection, not only startup.
+	parameters.Add("_pragma", "journal_mode(WAL)")
+	parameters.Add("_pragma", "busy_timeout(5000)")
+	parameters.Set("_txlock", "immediate")
+	return gorm.Open(sqlite.Open(filename+"?"+parameters.Encode()), newGormConfig(true))
+}
+
 func chooseDB(envName string, isLog bool) (*gorm.DB, common.DatabaseType, error) {
 	dsn := os.Getenv(envName)
 	if dsn != "" {
@@ -146,7 +162,7 @@ func chooseDB(envName string, isLog bool) (*gorm.DB, common.DatabaseType, error)
 		}
 		if strings.HasPrefix(dsn, "local") {
 			common.SysLog("SQL_DSN not set, using SQLite as database")
-			db, err := gorm.Open(sqlite.Open(common.SQLitePath), newGormConfig(true))
+			db, err := openSQLiteDatabase(common.SQLitePath)
 			return db, common.DatabaseTypeSQLite, err
 		}
 		// Use MySQL
@@ -164,7 +180,7 @@ func chooseDB(envName string, isLog bool) (*gorm.DB, common.DatabaseType, error)
 	}
 	// Use SQLite
 	common.SysLog("SQL_DSN not set, using SQLite as database")
-	db, err := gorm.Open(sqlite.Open(common.SQLitePath), newGormConfig(true))
+	db, err := openSQLiteDatabase(common.SQLitePath)
 	return db, common.DatabaseTypeSQLite, err
 }
 
@@ -294,6 +310,11 @@ func migrateDB() error {
 		&AuthzRole{},
 		&MarketListing{},
 		&MarketStat{},
+		&MarketProbeUsageRecord{},
+		&UpstreamSource{},
+		&UpstreamAccount{},
+		&UpstreamReview{},
+		&UpstreamRefresh{},
 	)
 	if err != nil {
 		return err
@@ -357,6 +378,11 @@ func migrateDBFast() error {
 		{&SystemTaskLock{}, "SystemTaskLock"},
 		{&MarketListing{}, "MarketListing"},
 		{&MarketStat{}, "MarketStat"},
+		{&MarketProbeUsageRecord{}, "MarketProbeUsageRecord"},
+		{&UpstreamSource{}, "UpstreamSource"},
+		{&UpstreamAccount{}, "UpstreamAccount"},
+		{&UpstreamReview{}, "UpstreamReview"},
+		{&UpstreamRefresh{}, "UpstreamRefresh"},
 	}
 	// 动态计算migration数量，确保errChan缓冲区足够大
 	errChan := make(chan error, len(migrations))

@@ -4,69 +4,58 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/model"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func rate(v float64) *float64 { return &v }
-
-func TestScoreMarketListingNeedsEnoughSamples(t *testing.T) {
-	cache := 0.1
-	s := ScoreMarketListing(0.2, &cache, &model.MarketStatSummary{Samples: 5, Week: model.MarketWindow{Rate: rate(1)}})
-	assert.Equal(t, 80, s.Price)
-	assert.Equal(t, 98, s.Cache)
-	assert.Nil(t, s.Stability)
-	assert.Nil(t, s.Speed)
-	assert.Nil(t, s.Total)
-
-	s = ScoreMarketListing(0.2, &cache, nil)
-	assert.Nil(t, s.Total)
-}
-
-func TestScoreMarketListingTotalIsAverageOfFourAxes(t *testing.T) {
-	cache := 0.1
-	stats := &model.MarketStatSummary{
-		Samples:      100,
-		AvgLatencyMs: 4500,
-		Week:         model.MarketWindow{Rate: rate(0.9)},
+func TestCacheRatioFromBillingExpr(t *testing.T) {
+	ratio := CacheRatioFromBillingExpr(`len < 272000 ? tier("standard", p * 10 + c * 50 + cr * 1 + cc * 12.5) : tier("long", p * 20 + c * 75 + cr * 2)`)
+	require.NotNil(t, ratio)
+	require.InDelta(t, 0.1, *ratio, 1e-9)
+	if CacheRatioFromBillingExpr(`tier("base", p * 2 + c * 10)`) != nil {
+		t.Fatal("an expression without cache-read pricing must not invent a cache ratio")
 	}
-	s := ScoreMarketListing(0.2, &cache, stats)
-	require.NotNil(t, s.Stability)
-	require.NotNil(t, s.Speed)
-	require.NotNil(t, s.Total)
-	assert.Equal(t, 90, *s.Stability)
-	assert.Equal(t, 50, *s.Speed)
-	assert.Equal(t, 80, s.Price)
-	assert.Equal(t, 98, s.Cache)
-	assert.Equal(t, 80, *s.Total, "(80+90+50+98)/4 = 79.5 rounds up")
 }
 
-func TestScoreMarketListingBounds(t *testing.T) {
-	s := ScoreMarketListing(3, nil, &model.MarketStatSummary{Samples: 50, AvgLatencyMs: 60000, Week: model.MarketWindow{Rate: rate(0)}})
-	assert.Equal(t, 0, s.Price)
-	assert.Equal(t, 0, s.Cache, "no cache price scores zero")
-	assert.Equal(t, 0, *s.Speed)
-	assert.Equal(t, 0, *s.Stability)
-	assert.Equal(t, 0, *s.Total)
-
-	s = ScoreMarketListing(0, nil, &model.MarketStatSummary{Samples: 50, AvgLatencyMs: 200, Week: model.MarketWindow{Rate: rate(1)}})
-	assert.Equal(t, 100, s.Price)
-	assert.Equal(t, 100, *s.Speed)
+func TestMarketModelMonitorableAllowsClaudeChat(t *testing.T) {
+	require.True(t, MarketModelMonitorable("claude-opus-5-5", model.Pricing{QuotaType: 0}))
+	require.False(t, MarketModelMonitorable("claude-image-tool", model.Pricing{QuotaType: 0}))
+	require.False(t, MarketModelMonitorable("claude-opus-5-5", model.Pricing{QuotaType: 1}))
 }
 
-func TestScoreMarketListingCapsAbnormalListings(t *testing.T) {
-	cache := 0.1
-	stats := &model.MarketStatSummary{
-		Samples:      100,
-		AvgLatencyMs: 1000,
-		Abnormal:     true,
-		Week:         model.MarketWindow{Rate: rate(0.98)},
+func TestClaudeCodeClientRequired(t *testing.T) {
+	for _, tt := range []struct {
+		name, model, message string
+		want                 bool
+	}{
+		{"actual upstream client restriction", "claude-sonnet-5", "bad response status code 400, message: 我们检测到您的客户端存在异常，请使用标准 Claude Code 客户端请求。如您对此事不知情，请首先尝试升级您的 Claude Code 客户端版本", true},
+		{"CC abbreviation", "vendor/Claude-Opus", "必须使用 CC 客户端", true},
+		{"English requirement", "claude-sonnet", "Please use the standard Claude Code client for this request", true},
+		{"English only restriction", "claude-sonnet", "This endpoint only supports Claude Code clients", true},
+		{"English CC requirement", "claude-sonnet", "You must use a CC client", true},
+		{"ordinary error", "claude-sonnet", "bad response status code 524", false},
+		{"CC group without client restriction", "claude-fable", "No available channel under group cc-cursor-华强北", false},
+		{"client name alone", "claude-sonnet", "Claude Code client: insufficient quota", false},
+		{"client is optional", "claude-sonnet", "Claude Code client is not required", false},
+		{"success", "claude-sonnet", "", false},
+		{"other model", "gpt-6", "必须使用 CC 客户端", false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, ClaudeCodeClientRequired(tt.model, tt.message))
+		})
 	}
-	s := ScoreMarketListing(0.2, &cache, stats)
-	require.NotNil(t, s.Total)
-	assert.Equal(t, 40, *s.Total)
+}
 
-	stats.Abnormal = false
-	s = ScoreMarketListing(0.2, &cache, stats)
-	assert.Greater(t, *s.Total, 40)
+func TestMarketListingMonitoringAvailableUsesClaudeProbeRestriction(t *testing.T) {
+	pricing := model.Pricing{QuotaType: 0}
+	listing := &model.MarketListing{ModelName: "claude-sonnet"}
+	require.True(t, MarketListingMonitoringAvailable(listing, pricing))
+	listing.ProbeRequiresClaudeCode = true
+	require.False(t, MarketListingMonitoringAvailable(listing, pricing))
+	listing.ProbeRequiresClaudeCode = false
+	require.True(t, MarketListingMonitoringAvailable(listing, pricing))
+	listing.ModelName = "claude-image-tool"
+	require.True(t, MarketListingMonitoringAvailable(listing, pricing), "model keywords cannot hide ordinary Claude outcomes")
+	require.False(t, MarketListingMonitoringAvailable(listing, model.Pricing{QuotaType: 1}))
+	listing.BillingMode = "fixed_request"
+	require.False(t, MarketListingMonitoringAvailable(listing, pricing))
 }

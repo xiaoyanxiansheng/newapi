@@ -38,8 +38,15 @@ export class MarketBusinessError extends Error {}
 /** Shared by the plaza and the key route dialog so both read one cache. */
 export const MARKET_MODELS_QUERY_KEY = ['market', 'models'] as const
 
-export function marketModelsQueryKey(tokenId: number | null | undefined) {
-  return [...MARKET_MODELS_QUERY_KEY, tokenId ?? null] as const
+export function marketModelsQueryKey(
+  tokenId: number | null | undefined,
+  viewer?: { id: number; role: number } | null
+) {
+  return [
+    ...MARKET_MODELS_QUERY_KEY,
+    tokenId ?? null,
+    ...(viewer ? [viewer.id, viewer.role] : []),
+  ] as const
 }
 
 export async function getMarketModels(tokenId?: number): Promise<MarketData> {
@@ -76,6 +83,7 @@ export async function joinMarketRoute(
   const res = await api.post(`/api/token/${input.tokenId}/routes`, {
     model: input.model,
     channel_id: input.channelId,
+    ...(input.listingId ? { listing_id: input.listingId } : {}),
   })
   if (!res.data?.success) {
     throw new MarketBusinessError(res.data?.message)
@@ -87,7 +95,11 @@ export async function leaveMarketRoute(
   input: MarketRouteInput
 ): Promise<MarketRoutesResponse> {
   const res = await api.delete(`/api/token/${input.tokenId}/routes`, {
-    data: { model: input.model, channel_id: input.channelId },
+    data: {
+      model: input.model,
+      channel_id: input.channelId,
+      ...(input.listingId ? { listing_id: input.listingId } : {}),
+    },
   })
   if (!res.data?.success) {
     throw new MarketBusinessError(res.data?.message)

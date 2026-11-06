@@ -23,6 +23,7 @@ import {
   buildVendorSections,
   formatListingId,
   formatRatio,
+  getMarketBaseModelName,
   sortChannelsForDisplay,
   sortMarketModels,
 } from '../lib/market-helpers'
@@ -60,6 +61,24 @@ function scored(total: number | null, joined = false): MarketChannel {
 }
 
 describe('formatters', () => {
+  test.each([
+    ['claude-opus-5-5@s1c13', 'claude-opus-5-5'],
+    ['claude-opus-5-5@s46c260', 'claude-opus-5-5'],
+    ['gpt-6.1-sol-high@s1c35', 'gpt-6.1-sol-high'],
+    ['gpt-6.1-sol-xhigh@s1c35', 'gpt-6.1-sol-xhigh'],
+    ['claude-opus-5-5', 'claude-opus-5-5'],
+    ['model@private', 'model@private'],
+    ['model@s1c13-preview', 'model@s1c13-preview'],
+    ['minimax-m3@s61c310', 'MiniMax-M3'],
+    ['minimax-m3', 'MiniMax-M3'],
+    ['MiniMax-M3', 'MiniMax-M3'],
+  ])(
+    'model choice %s removes only a recognized supplier route suffix and preserves model levels',
+    (accessName, expected) => {
+      expect(getMarketBaseModelName(accessName)).toBe(expected)
+    }
+  )
+
   test('pads the listing id to five digits', () => {
     expect(formatListingId(235)).toBe('ID00235')
     expect(formatListingId(123456)).toBe('ID123456')
@@ -94,7 +113,7 @@ describe('sortChannelsForDisplay', () => {
 })
 
 describe('sortMarketModels', () => {
-  test('pins joined models, then sorts by score with null last, then name', () => {
+  test('defaults to descending score regardless of joined state, with null last', () => {
     const sorted = sortMarketModels([
       model('b-null', [scored(null)]),
       model('a-low', [scored(40)]),
@@ -103,12 +122,83 @@ describe('sortMarketModels', () => {
       model('a-null', [scored(null)]),
     ])
     expect(sorted.map((item) => item.model_name)).toEqual([
-      'd-pinned',
       'c-high',
       'a-low',
+      'd-pinned',
       'a-null',
       'b-null',
     ])
+  })
+
+  test('supports ascending representative price sorting', () => {
+    const sorted = sortMarketModels(
+      [
+        model('expensive', [channel({ ratio: 2 })]),
+        model('cheap', [channel({ ratio: 0.2 })]),
+      ],
+      'price'
+    )
+    expect(sorted.map((item) => item.model_name)).toEqual([
+      'cheap',
+      'expensive',
+    ])
+  })
+
+  test('sorts by output price even when input prices would reverse the order', () => {
+    const expensiveOutput = {
+      ...model('expensive-output', [channel({ ratio: 0.2, joined: true })]),
+      completion_ratio: 20,
+    }
+    const cheapOutput = {
+      ...model('cheap-output', [channel({ ratio: 1 })]),
+      completion_ratio: 1,
+    }
+    expect(
+      sortMarketModels([expensiveOutput, cheapOutput], 'price').map(
+        (item) => item.model_name
+      )
+    ).toEqual(['cheap-output', 'expensive-output'])
+  })
+
+  test('puts free output first and missing output prices last', () => {
+    const free = { ...model('free', [channel({})]), completion_ratio: 0 }
+    const unknown = {
+      ...model('unknown', [channel({})]),
+      completion_ratio: Number.NaN,
+    }
+    expect(
+      sortMarketModels(
+        [unknown, model('paid', [channel({})]), free],
+        'price'
+      ).map((item) => item.model_name)
+    ).toEqual(['free', 'paid', 'unknown'])
+  })
+
+  test('uses the quoted first tier output price for dynamic models', () => {
+    const dynamic = {
+      ...model('dynamic', [channel({ ratio: 0.5 })]),
+      billing_mode: 'tiered_expr',
+      billing_expr: '(p * 2 + c * 8) / 1000000',
+    }
+    expect(
+      sortMarketModels(
+        [dynamic, model('standard', [channel({})])],
+        'price'
+      ).map((item) => item.model_name)
+    ).toEqual(['standard', 'dynamic'])
+  })
+
+  test('keeps per-request prices separate from per-million-token output prices', () => {
+    const request = {
+      ...model('per-request', [channel({})]),
+      quota_type: 1,
+      model_price: 0.001,
+    }
+    expect(
+      sortMarketModels([request, model('token', [channel({})])], 'price').map(
+        (item) => item.model_name
+      )
+    ).toEqual(['token', 'per-request'])
   })
 })
 

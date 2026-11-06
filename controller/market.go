@@ -2,6 +2,7 @@ package controller
 
 import (
 	"errors"
+	"net/url"
 	"sort"
 	"strconv"
 
@@ -14,15 +15,26 @@ import (
 const maxChannelsPerModelRoute = 20
 
 type marketChannel struct {
-	ChannelId   int                      `json:"channel_id"`
-	ListingId   int                      `json:"listing_id"`
-	Ratio       float64                  `json:"ratio"`
-	Description string                   `json:"description"`
-	Joined      bool                     `json:"joined"`
-	Position    int                      `json:"position"`
-	Abnormal    bool                     `json:"abnormal"`
-	Stats       *model.MarketStatSummary `json:"stats"`
-	Score       *service.MarketScore     `json:"score"`
+	PriceRatio          float64                  `json:"price_ratio"`
+	OutputPrice         float64                  `json:"output_price"`
+	Pricing             *model.Pricing           `json:"pricing,omitempty"`
+	BillingMode         string                   `json:"billing_mode,omitempty"`
+	BillingExpr         string                   `json:"billing_expr,omitempty"`
+	OriginalBillingExpr string                   `json:"original_billing_expr,omitempty"`
+	ChannelId           int                      `json:"channel_id"`
+	WebsiteName         string                   `json:"website_name,omitempty"`
+	ChannelName         string                   `json:"channel_name,omitempty"`
+	ListingId           int                      `json:"listing_id"`
+	Ratio               float64                  `json:"ratio"`
+	Description         string                   `json:"description"`
+	Joined              bool                     `json:"joined"`
+	Position            int                      `json:"position"`
+	ListedAt            int64                    `json:"listed_at"`
+	Abnormal            bool                     `json:"abnormal"`
+	Stats               *model.MarketStatSummary `json:"stats"`
+	DefaultSuccess      bool                     `json:"default_success"`
+	Score               *service.MarketScore     `json:"score"`
+	MonitoringAvailable bool                     `json:"monitoring_available"`
 }
 
 type marketItem struct {
@@ -32,9 +44,10 @@ type marketItem struct {
 }
 
 // GetMarketModels lists every model with at least one sellable channel. Channels are
-// only identified by id. When token_id is given, each channel reports whether the key joined it.
+// only identified by id for ordinary users. Administrators also receive website and channel names.
+// When token_id is given, each channel reports whether the key joined it.
 func GetMarketModels(c *gin.Context) {
-	joined := map[string][]int{}
+	joinedListings := map[int]int{}
 	if tokenId, _ := strconv.Atoi(c.Query("token_id")); tokenId > 0 {
 		userId := c.GetInt("id")
 		if userId == 0 {
@@ -46,53 +59,157 @@ func GetMarketModels(c *gin.Context) {
 			common.ApiError(c, err)
 			return
 		}
-		joined = token.GetRouteMap()
+		for _, route := range model.LiveTokenRoutes(token.GetRoutes()) {
+			for i := range route.Channels {
+				if listing := route.Listing(i); listing != nil {
+					joinedListings[listing.Id] = i + 1
+				}
+			}
+		}
 	}
 
 	pricingByModel := map[string]model.Pricing{}
 	for _, p := range model.GetPricing() {
 		pricingByModel[p.ModelName] = p
 	}
-
-	grouped := map[string][]marketChannel{}
-	for _, l := range model.GetAllMarketListingsCached() {
-		if _, ok := service.SellableListing(l); !ok {
-			continue
-		}
-		if _, ok := pricingByModel[l.ModelName]; !ok {
-			continue
-		}
-		pricing := pricingByModel[l.ModelName]
-		stats := model.GetMarketStatSummary(l.ChannelId, l.ModelName)
-		score := service.ScoreMarketListing(l.Ratio, pricing.CacheRatio, stats)
-		mc := marketChannel{
-			ChannelId:   l.ChannelId,
-			ListingId:   l.Id,
-			Ratio:       l.Ratio,
-			Description: l.Description,
-			Stats:       stats,
-			Score:       &score,
-			Abnormal:    stats != nil && stats.Abnormal,
-		}
-		for i, id := range joined[l.ModelName] {
-			if id == l.ChannelId {
-				mc.Joined = true
-				mc.Position = i + 1
-				break
+	// Older listings may predate inherited descriptions. Read the saved upstream
+	// snapshot as a display-only fallback; manual listing descriptions win.
+	inheritedDescription := map[int]string{}
+	var sources []model.UpstreamSource
+	if err := model.DB.Where("channel_id > 0 AND latest_json <> ''").Find(&sources).Error; err == nil {
+		for _, source := range sources {
+			var quotes []model.UpstreamQuote
+			if common.UnmarshalJsonStr(source.LatestJSON, &quotes) != nil {
+				continue
+			}
+			for _, quote := range quotes {
+				description := quote.GroupDescription
+				if description == "" {
+					description = quote.Description
+				}
+				if description != "" {
+					inheritedDescription[source.ChannelId] = description
+					break
+				}
 			}
 		}
-		grouped[l.ModelName] = append(grouped[l.ModelName], mc)
+	}
+
+	grouped := map[string][]marketChannel{}
+	showChannelNames := c.GetInt("id") > 0 && c.GetInt("role") >= common.RoleAdminUser
+	websiteNames := map[int]string{}
+	if showChannelNames {
+		var identitySources []model.UpstreamSource
+		if err := model.DB.Select("channel_id", "account_id", "base_url").Where("channel_id > 0").Find(&identitySources).Error; err == nil {
+			accountIDs := make([]int, 0)
+			seenAccounts := map[int]struct{}{}
+			for _, source := range identitySources {
+				if source.AccountId > 0 {
+					if _, seen := seenAccounts[source.AccountId]; !seen {
+						accountIDs = append(accountIDs, source.AccountId)
+						seenAccounts[source.AccountId] = struct{}{}
+					}
+				}
+			}
+			accounts := map[int]model.UpstreamAccount{}
+			if len(accountIDs) > 0 {
+				var rows []model.UpstreamAccount
+				if model.DB.Select("id", "name").Where("id IN ?", accountIDs).Find(&rows).Error == nil {
+					for _, account := range rows {
+						accounts[account.Id] = account
+					}
+				}
+			}
+			for _, source := range identitySources {
+				name := ""
+				if account, ok := accounts[source.AccountId]; ok {
+					name = account.Name
+				}
+				if name == "" {
+					if parsed, err := url.Parse(source.BaseURL); err == nil {
+						name = parsed.Hostname()
+					}
+				}
+				if name != "" {
+					websiteNames[source.ChannelId] = name
+				}
+			}
+		}
+	}
+	for _, l := range model.GetAllMarketListingsCached() {
+		channel, ok := service.SellableListing(l)
+		if !ok {
+			continue
+		}
+		pricing := l.OriginalPricing(pricingByModel[l.ModelName])
+		stats := model.GetMarketStatSummary(l.ChannelId, l.ModelName)
+		outputPrice, discount := service.MarketListingPriceReference(l, pricing)
+		cacheRatio := pricing.CacheRatio
+		if cacheRatio == nil {
+			cacheRatio = service.CacheRatioFromBillingExpr(l.OriginalBillingExpr)
+			if cacheRatio == nil {
+				cacheRatio = service.CacheRatioFromBillingExpr(pricing.BillingExpr)
+			}
+		}
+		score := service.ScoreMarketListing(discount, cacheRatio, stats)
+		originalPricing := pricing
+		if l.BillingMode == "fixed_request" {
+			price, err := model.ParseUpstreamAmount(l.BillingExpr)
+			if err != nil {
+				continue
+			}
+			originalPricing.ModelPrice, _ = price.Float64()
+		}
+		description := l.Description
+		if description == "" {
+			description = inheritedDescription[l.ChannelId]
+		}
+		mc := marketChannel{OutputPrice: outputPrice, Pricing: &originalPricing, BillingMode: l.BillingMode, BillingExpr: l.BillingExpr, OriginalBillingExpr: l.OriginalBillingExpr,
+			ChannelId:           l.ChannelId,
+			ListingId:           l.Id,
+			Ratio:               l.Ratio,
+			PriceRatio:          discount,
+			Description:         description,
+			ListedAt:            l.ListedAt,
+			Stats:               stats,
+			DefaultSuccess:      l.DefaultSuccess,
+			Score:               &score,
+			Abnormal:            stats != nil && stats.Abnormal,
+			MonitoringAvailable: service.MarketListingMonitoringAvailable(l, pricing),
+		}
+		if showChannelNames {
+			mc.WebsiteName = websiteNames[l.ChannelId]
+			if mc.WebsiteName == "" {
+				if parsed, err := url.Parse(channel.GetBaseURL()); err == nil {
+					mc.WebsiteName = parsed.Hostname()
+				}
+			}
+			mc.ChannelName = channel.Name
+		}
+		mc.Position = joinedListings[l.Id]
+		mc.Joined = mc.Position > 0
+		name := common.MarketBaseModel(l.ModelName)
+		grouped[name] = append(grouped[name], mc)
 	}
 
 	items := make([]marketItem, 0, len(grouped))
 	for name, channels := range grouped {
 		sort.Slice(channels, func(i, j int) bool {
-			if channels[i].Ratio != channels[j].Ratio {
-				return channels[i].Ratio < channels[j].Ratio
+			if channels[i].OutputPrice != channels[j].OutputPrice {
+				return channels[i].OutputPrice < channels[j].OutputPrice
+			}
+			if channels[i].ChannelId == channels[j].ChannelId {
+				return channels[i].ListingId < channels[j].ListingId
 			}
 			return channels[i].ChannelId < channels[j].ChannelId
 		})
-		items = append(items, marketItem{Pricing: pricingByModel[name], MinRatio: channels[0].Ratio, Channels: channels})
+		reference := model.MarketListing{ModelName: name, BillingMode: channels[0].BillingMode, OriginalBillingExpr: channels[0].OriginalBillingExpr}
+		original := reference.OriginalPricing(pricingByModel[name])
+		if channels[0].Pricing != nil {
+			original = *channels[0].Pricing
+		}
+		original.ModelName = name
+		items = append(items, marketItem{Pricing: original, MinRatio: channels[0].Ratio, Channels: channels})
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].ModelName < items[j].ModelName })
 
@@ -118,6 +235,7 @@ func GetMarketModels(c *gin.Context) {
 
 type routeChannelView struct {
 	ChannelId   int     `json:"channel_id"`
+	ListingId   int     `json:"listing_id,omitempty"`
 	Ratio       float64 `json:"ratio"`
 	Description string  `json:"description"`
 	Available   bool    `json:"available"`
@@ -129,15 +247,25 @@ type routeView struct {
 }
 
 func buildRouteViews(routes []model.TokenRoute) []routeView {
+	routes = model.LiveTokenRoutes(routes)
 	views := make([]routeView, 0, len(routes))
 	for _, r := range routes {
 		v := routeView{Model: r.Model, Channels: make([]routeChannelView, 0, len(r.Channels))}
-		for _, id := range r.Channels {
+		for index, id := range r.Channels {
+			listing := r.Listing(index)
+			// A deleted listing can remain in an older token route JSON. It is
+			// not a selectable fallback anymore, so do not expose its stale ID
+			// in the route editor. Keep legacy channel-only entries visible.
+			if listing == nil && r.ListingID(index) > 0 {
+				continue
+			}
 			cv := routeChannelView{ChannelId: id}
-			if l := model.GetMarketListing(id, r.Model); l != nil {
-				cv.Ratio = l.Ratio
-				cv.Description = l.Description
-				_, cv.Available = service.SellableListing(l)
+			cv.ListingId = r.ListingID(index)
+			if listing != nil {
+				cv.ListingId = listing.Id
+				cv.Ratio = listing.Ratio
+				cv.Description = listing.Description
+				_, cv.Available = service.SellableListing(listing)
 			}
 			v.Channels = append(v.Channels, cv)
 		}
@@ -163,6 +291,7 @@ func GetTokenRoutes(c *gin.Context) {
 type tokenRouteRequest struct {
 	Model     string `json:"model"`
 	ChannelId int    `json:"channel_id"`
+	ListingId int    `json:"listing_id"`
 }
 
 func AddTokenRoute(c *gin.Context) {
@@ -172,28 +301,39 @@ func AddTokenRoute(c *gin.Context) {
 		common.ApiErrorMsg(c, "model and channel_id are required")
 		return
 	}
-	if _, ok := service.SellableListing(model.GetMarketListing(req.ChannelId, req.Model)); !ok {
+	listing := model.GetMarketListing(req.ChannelId, req.Model)
+	if req.ListingId > 0 {
+		listing = model.GetMarketListingByID(req.ListingId)
+	}
+	if listing == nil || listing.ChannelId != req.ChannelId || common.MarketBaseModel(listing.ModelName) != common.MarketBaseModel(req.Model) {
 		common.ApiErrorMsg(c, "this channel is not available in the market")
 		return
 	}
+	if _, ok := service.SellableListing(listing); !ok {
+		common.ApiErrorMsg(c, "this channel is not available in the market")
+		return
+	}
+	req.Model = common.MarketBaseModel(req.Model)
+	req.ListingId = listing.Id
 	token, err := model.MutateTokenRoutes(id, c.GetInt("id"), func(routes []model.TokenRoute) ([]model.TokenRoute, error) {
 		for i := range routes {
 			if routes[i].Model != req.Model {
 				continue
 			}
-			for _, existing := range routes[i].Channels {
-				if existing == req.ChannelId {
+			for index := range routes[i].Channels {
+				existing := routes[i].Listing(index)
+				if existing != nil && existing.Id == req.ListingId {
 					return routes, nil
 				}
 			}
 			if len(routes[i].Channels) >= maxChannelsPerModelRoute {
 				return nil, errors.New("too many channels for this model")
 			}
-			routes[i].Channels = append(routes[i].Channels, req.ChannelId)
+			routes[i].AppendChannel(req.ChannelId, req.ListingId)
 			return routes, nil
 		}
-		return append(routes, model.TokenRoute{Model: req.Model, Channels: []int{req.ChannelId}}), nil
-	})
+		return append(routes, model.TokenRoute{Model: req.Model, Channels: []int{req.ChannelId}, ListingIDs: []int{req.ListingId}}), nil
+	}, listing.Id)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -208,18 +348,21 @@ func RemoveTokenRoute(c *gin.Context) {
 		common.ApiErrorMsg(c, "model and channel_id are required")
 		return
 	}
+	req.Model = common.MarketBaseModel(req.Model)
 	token, err := model.MutateTokenRoutes(id, c.GetInt("id"), func(routes []model.TokenRoute) ([]model.TokenRoute, error) {
 		for i := range routes {
 			if routes[i].Model != req.Model {
 				continue
 			}
-			kept := make([]int, 0, len(routes[i].Channels))
-			for _, existing := range routes[i].Channels {
-				if existing != req.ChannelId {
-					kept = append(kept, existing)
+			kept := model.TokenRoute{Model: routes[i].Model, Channels: []int{}}
+			for index, existing := range routes[i].Channels {
+				listing := routes[i].Listing(index)
+				remove := existing == req.ChannelId && (req.ListingId == 0 || (listing != nil && listing.Id == req.ListingId) || routes[i].ListingID(index) == req.ListingId)
+				if !remove {
+					kept.AppendChannel(existing, routes[i].ListingID(index))
 				}
 			}
-			routes[i].Channels = kept
+			routes[i] = kept
 		}
 		return routes, nil
 	})
@@ -243,8 +386,9 @@ func AddTokenRouteModel(c *gin.Context) {
 		return
 	}
 	onSale := false
+	req.Model = common.MarketBaseModel(req.Model)
 	for _, l := range model.GetAllMarketListingsCached() {
-		if l.ModelName != req.Model {
+		if common.MarketBaseModel(l.ModelName) != req.Model {
 			continue
 		}
 		if _, ok := service.SellableListing(l); ok {
@@ -279,6 +423,7 @@ func RemoveTokenRouteModel(c *gin.Context) {
 		common.ApiErrorMsg(c, "model is required")
 		return
 	}
+	req.Model = common.MarketBaseModel(req.Model)
 	token, err := model.MutateTokenRoutes(id, c.GetInt("id"), func(routes []model.TokenRoute) ([]model.TokenRoute, error) {
 		kept := make([]model.TokenRoute, 0, len(routes))
 		for _, r := range routes {
@@ -296,8 +441,9 @@ func RemoveTokenRouteModel(c *gin.Context) {
 }
 
 type tokenRouteOrderRequest struct {
-	Model    string `json:"model"`
-	Channels []int  `json:"channels"`
+	Model      string `json:"model"`
+	Channels   []int  `json:"channels"`
+	ListingIDs []int  `json:"listing_ids"`
 }
 
 func ReorderTokenRoute(c *gin.Context) {
@@ -307,10 +453,54 @@ func ReorderTokenRoute(c *gin.Context) {
 		common.ApiErrorMsg(c, "model and channels are required")
 		return
 	}
+	req.Model = common.MarketBaseModel(req.Model)
 	token, err := model.MutateTokenRoutes(id, c.GetInt("id"), func(routes []model.TokenRoute) ([]model.TokenRoute, error) {
 		for i := range routes {
 			if routes[i].Model != req.Model {
 				continue
+			}
+			if len(req.ListingIDs) > 0 {
+				if len(req.ListingIDs) != len(routes[i].Channels) || len(req.Channels) != len(req.ListingIDs) {
+					return nil, errors.New("channels do not match the current route, refresh and retry")
+				}
+				current := map[int]int{}
+				for index, id := range routes[i].Channels {
+					listing := routes[i].Listing(index)
+					if listing == nil {
+						return nil, errors.New("unavailable listing in route")
+					}
+					current[listing.Id] = id
+				}
+				seen := map[int]bool{}
+				for index, id := range req.ListingIDs {
+					channelID, exists := current[id]
+					if !exists || channelID != req.Channels[index] || seen[id] {
+						return nil, errors.New("channels do not match the current route, refresh and retry")
+					}
+					seen[id] = true
+				}
+				routes[i].Channels = req.Channels
+				routes[i].ListingIDs = req.ListingIDs
+				return routes, nil
+			}
+			if len(routes[i].ListingIDs) > 0 {
+				listingIDs := make([]int, 0, len(req.Channels))
+				for _, channelID := range req.Channels {
+					found := false
+					for index, currentID := range routes[i].Channels {
+						if currentID == channelID {
+							if found {
+								return nil, errors.New("listing_ids are required to reorder supplier routes")
+							}
+							listingIDs = append(listingIDs, routes[i].ListingID(index))
+							found = true
+						}
+					}
+				}
+				if len(listingIDs) != len(routes[i].Channels) {
+					return nil, errors.New("channels do not match the current route, refresh and retry")
+				}
+				routes[i].ListingIDs = listingIDs
 			}
 			current := make(map[int]struct{}, len(routes[i].Channels))
 			for _, existing := range routes[i].Channels {
@@ -443,10 +633,12 @@ func CreateAdminMarketListing(c *gin.Context) {
 }
 
 type updateListingRequest struct {
-	Ratio       *float64 `json:"ratio"`
-	Enabled     *bool    `json:"enabled"`
-	Description *string  `json:"description"`
-	SortOrder   *int     `json:"sort_order"`
+	Ratio          *float64 `json:"ratio"`
+	Enabled        *bool    `json:"enabled"`
+	Description    *string  `json:"description"`
+	SortOrder      *int     `json:"sort_order"`
+	DefaultSuccess *bool    `json:"default_success"`
+	ProbeEndpoint  *string  `json:"probe_endpoint"`
 }
 
 func UpdateAdminMarketListing(c *gin.Context) {
@@ -455,6 +647,14 @@ func UpdateAdminMarketListing(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.ApiError(c, err)
 		return
+	}
+	if req.ProbeEndpoint != nil {
+		switch *req.ProbeEndpoint {
+		case "", "openai", "openai-response", "anthropic", "gemini":
+		default:
+			common.ApiError(c, errors.New("unsupported probe endpoint"))
+			return
+		}
 	}
 	var current model.MarketListing
 	if err := model.DB.First(&current, "id = ?", id).Error; err != nil {
@@ -468,7 +668,7 @@ func UpdateAdminMarketListing(c *gin.Context) {
 	if req.Enabled != nil {
 		next.Enabled = *req.Enabled
 	}
-	if next.Enabled {
+	if next.Enabled && (req.Enabled != nil || req.Ratio != nil) {
 		if err := validateListingEnable(&next); err != nil {
 			common.ApiError(c, err)
 			return
@@ -478,6 +678,22 @@ func UpdateAdminMarketListing(c *gin.Context) {
 	if err != nil {
 		common.ApiError(c, err)
 		return
+	}
+	if req.DefaultSuccess != nil {
+		if err := model.DB.Model(&model.MarketListing{}).Where("id = ?", id).Update("default_success", *req.DefaultSuccess).Error; err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		model.InvalidateMarketListings()
+		updated.DefaultSuccess = *req.DefaultSuccess
+	}
+	if req.ProbeEndpoint != nil {
+		if err := model.DB.Model(&model.MarketListing{}).Where("id = ?", id).Update("probe_endpoint", *req.ProbeEndpoint).Error; err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		model.InvalidateMarketListings()
+		updated.ProbeEndpoint = *req.ProbeEndpoint
 	}
 	common.ApiSuccess(c, updated)
 }

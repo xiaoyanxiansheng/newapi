@@ -17,10 +17,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { Link } from '@tanstack/react-router'
-import { ArrowUpRight, BookOpen, Check, KeyRound } from 'lucide-react'
+import { ArrowUpRight, Check, KeyRound } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-
-import { useStatus } from '@/hooks/use-status'
 
 import { HomeAuthPanel } from './home-auth-panel'
 import { HwjaiMark } from './hwjai-mark'
@@ -29,10 +27,6 @@ import '@/styles/hwjai-home.css'
 
 export function HwjaiLanding() {
   const { t } = useTranslation()
-  const { status } = useStatus()
-  const configuredDocsUrl =
-    typeof status?.docs_link === 'string' ? status.docs_link : ''
-  const docsUrl = configuredDocsUrl || 'https://docs.newapi.pro'
 
   return (
     <main id='main-content' className='hwjai-landing'>
@@ -106,16 +100,6 @@ export function HwjaiLanding() {
               </div>
               <span className='hwjai-art-word'>TOKEN</span>
             </div>
-            <a
-              href={docsUrl}
-              className='hwjai-docs-link'
-              target={/^https?:\/\//i.test(docsUrl) ? '_blank' : undefined}
-              rel='noopener noreferrer'
-            >
-              <BookOpen aria-hidden='true' size={16} />
-              {t('Read the integration guide')}
-              <ArrowUpRight aria-hidden='true' size={15} />
-            </a>
           </div>
         </div>
         <div className='hwjai-account'>

@@ -485,6 +485,7 @@ func SetupContextForToken(c *gin.Context, token *model.Token, parts ...string) e
 		c.Set("token_model_limit_enabled", false)
 	}
 	common.SetContextKey(c, constant.ContextKeyTokenRoutes, token.GetRouteMap())
+	c.Set("token_route_entries", token.GetRoutes())
 	common.SetContextKey(c, constant.ContextKeyTokenAutoRoute, token.AutoRoute)
 	if len(parts) > 1 {
 		if model.IsAdmin(token.UserId) {

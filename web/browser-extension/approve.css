@@ -1,0 +1,66 @@
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
+body {
+  margin: 0;
+  background: #f4f7fb;
+  color: #14233b;
+  font:
+    16px/1.7 system-ui,
+    sans-serif;
+}
+main {
+  max-width: 760px;
+  margin: 40px auto;
+  padding: 28px;
+  background: white;
+  border: 1px solid #dce3ec;
+  border-radius: 16px;
+}
+h1 {
+  font-size: 24px;
+  margin-top: 0;
+}
+li {
+  margin: 10px 0;
+  overflow-wrap: anywhere;
+}
+button {
+  font: inherit;
+  background: #175fe6;
+  color: white;
+  border: 0;
+  border-radius: 9px;
+  padding: 10px 20px;
+  cursor: pointer;
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+#status {
+  overflow-wrap: anywhere;
+}
+.muted,
+footer {
+  color: #536278;
+  font-size: 13px;
+}
+footer {
+  margin-top: 24px;
+}

@@ -40,9 +40,12 @@ import (
 type silentChannelTestKey struct{}
 
 type testResult struct {
-	context     *gin.Context
-	localErr    error
-	newAPIError *types.NewAPIError
+	rawProbeUsage  *model.MarketProbeUsageRecord
+	context        *gin.Context
+	usage          *dto.Usage
+	usageEstimated bool
+	localErr       error
+	newAPIError    *types.NewAPIError
 }
 
 func normalizeChannelTestEndpoint(channel *model.Channel, endpointType string) string {
@@ -54,6 +57,40 @@ func normalizeChannelTestEndpoint(channel *model.Channel, endpointType string) s
 		return string(constant.EndpointTypeOpenAIResponse)
 	}
 	return normalized
+}
+
+// inferChannelTestEndpoint selects the least surprising protocol for an
+// automatic channel test. Explicit endpoint_type values still take
+// precedence; this is only used when the caller asks for auto detection.
+//
+// Keep model-specific routes ahead of channel defaults because a channel can
+// expose several endpoint families (for example a New API channel can serve
+// OpenAI, Anthropic, and Gemini requests).
+func inferChannelTestEndpoint(channel *model.Channel, modelName string) string {
+	lowerModel := strings.ToLower(strings.TrimSpace(modelName))
+	switch {
+	case strings.Contains(lowerModel, "rerank"):
+		return string(constant.EndpointTypeJinaRerank)
+	case strings.Contains(lowerModel, "embedding"),
+		strings.HasPrefix(lowerModel, "m3e"),
+		strings.Contains(lowerModel, "bge-"),
+		strings.Contains(lowerModel, "embed"),
+		channel != nil && channel.Type == constant.ChannelTypeMokaAI:
+		return string(constant.EndpointTypeEmbeddings)
+	case channel != nil && channel.Type == constant.ChannelTypeVolcEngine &&
+		strings.Contains(lowerModel, "seedream"):
+		return string(constant.EndpointTypeImageGeneration)
+	case strings.Contains(lowerModel, "codex") ||
+		(channel != nil && channel.Type == constant.ChannelTypeCodex):
+		return string(constant.EndpointTypeOpenAIResponse)
+	}
+
+	if channel != nil {
+		if endpointTypes := common.GetEndpointTypesByChannelType(channel.Type, modelName); len(endpointTypes) > 0 {
+			return string(endpointTypes[0])
+		}
+	}
+	return string(constant.EndpointTypeOpenAI)
 }
 
 func resolveChannelTestUserID(c *gin.Context) (int, error) {
@@ -73,7 +110,7 @@ func resolveChannelTestUserID(c *gin.Context) (int, error) {
 	return rootUser.Id, nil
 }
 
-func testChannel(ctx context.Context, channel *model.Channel, testUserID int, testModel string, endpointType string, isStream bool) testResult {
+func testChannel(ctx context.Context, channel *model.Channel, testUserID int, testModel string, endpointType string, isStream bool) (outcome testResult) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -112,40 +149,14 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 	}
 
 	endpointType = normalizeChannelTestEndpoint(channel, endpointType)
+	if endpointType == "" {
+		endpointType = inferChannelTestEndpoint(channel, testModel)
+	}
 
 	requestPath := "/v1/chat/completions"
 
-	// 如果指定了端点类型，使用指定的端点类型
-	if endpointType != "" {
-		if endpointInfo, ok := common.GetDefaultEndpointInfo(constant.EndpointType(endpointType)); ok {
-			requestPath = endpointInfo.Path
-		}
-	} else {
-		// 如果没有指定端点类型，使用原有的自动检测逻辑
-
-		if strings.Contains(strings.ToLower(testModel), "rerank") {
-			requestPath = "/v1/rerank"
-		}
-
-		// 先判断是否为 Embedding 模型
-		if strings.Contains(strings.ToLower(testModel), "embedding") ||
-			strings.HasPrefix(testModel, "m3e") || // m3e 系列模型
-			strings.Contains(testModel, "bge-") || // bge 系列模型
-			strings.Contains(testModel, "embed") ||
-			channel.Type == constant.ChannelTypeMokaAI { // 其他 embedding 模型
-			requestPath = "/v1/embeddings" // 修改请求路径
-		}
-
-		// VolcEngine 图像生成模型
-		if channel.Type == constant.ChannelTypeVolcEngine && strings.Contains(testModel, "seedream") {
-			requestPath = "/v1/images/generations"
-		}
-
-		// responses-only models
-		if strings.Contains(strings.ToLower(testModel), "codex") {
-			requestPath = "/v1/responses"
-		}
-
+	if endpointInfo, ok := common.GetDefaultEndpointInfo(constant.EndpointType(endpointType)); ok {
+		requestPath = endpointInfo.Path
 	}
 	// Gemini 原生流式通过 URL action（:streamGenerateContent）表达而非请求体字段，
 	// GeminiChatRequest.IsStream 依据请求 URL 判定，合成请求路径需与生产入口保持一致
@@ -231,6 +242,9 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 	}
 
 	request := buildTestRequest(testModel, endpointType, channel, isStream)
+	if ctx.Value(silentChannelTestKey{}) != nil {
+		request = buildMarketProbeRequest(testModel, endpointType, channel, isStream)
+	}
 
 	info, err := relaycommon.GenRelayInfo(c, relayFormat, request, nil)
 
@@ -268,6 +282,19 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 	request.SetModelName(testModel)
 
 	apiType, _ := common.ChannelType2APIType(channel.Type)
+	if ctx.Value(silentChannelTestKey{}) != nil {
+		switch channel.Type {
+		case constant.ChannelTypeOpenAI, constant.ChannelTypeNewAPI, constant.ChannelTypeSub2API:
+			// A generic gateway can expose multiple native endpoints. A selected
+			// Messages test must not silently convert back into a Chat request.
+			switch constant.EndpointType(endpointType) {
+			case constant.EndpointTypeAnthropic:
+				apiType = constant.APITypeAnthropic
+			case constant.EndpointTypeGemini:
+				apiType = constant.APITypeGemini
+			}
+		}
+	}
 	if info.RelayMode == relayconstant.RelayModeResponsesCompact &&
 		!common.SupportsResponsesCompact(channel.Type, apiType) {
 		return testResult{
@@ -428,6 +455,49 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 	}
 
 	requestBody := bytes.NewBuffer(jsonData)
+	if ctx.Value(silentChannelTestKey{}) != nil {
+		// Preserve provider metadata while keeping the comparison prompt and
+		// budget fixed even when the channel has request parameter overrides.
+		var payload map[string]any
+		if err := common.Unmarshal(jsonData, &payload); err == nil {
+			const prompt = "Reply with exactly the word OK. Do not add explanations."
+			for _, field := range []string{"max_tokens", "max_completion_tokens", "max_output_tokens"} {
+				if _, exists := payload[field]; exists {
+					payload[field] = 256
+				}
+			}
+			if _, exists := payload["messages"]; exists {
+				payload["messages"] = []map[string]any{{"role": "user", "content": prompt}}
+				if apiType == constant.APITypeAnthropic {
+					payload["max_tokens"] = 256
+				} else {
+					payload["max_completion_tokens"] = 256
+				}
+			}
+			if endpointType == string(constant.EndpointTypeOpenAIResponse) {
+				if channel.Type != constant.ChannelTypeCodex {
+					payload["input"] = prompt
+				}
+				payload["max_output_tokens"] = 256
+			}
+			if _, exists := payload["contents"]; exists {
+				payload["contents"] = []map[string]any{{"role": "user", "parts": []map[string]any{{"text": prompt}}}}
+				config, ok := payload["generationConfig"].(map[string]any)
+				if !ok {
+					config = map[string]any{}
+					payload["generationConfig"] = config
+				}
+				config["maxOutputTokens"] = 256
+			}
+			if _, exists := payload["stream"]; exists {
+				payload["stream"] = true
+			}
+			if updated, err := common.Marshal(payload); err == nil {
+				jsonData = updated
+				requestBody = bytes.NewBuffer(updated)
+			}
+		}
+	}
 	c.Request.Body = io.NopCloser(bytes.NewBuffer(jsonData))
 	resp, err := adaptor.DoRequest(c, info, requestBody)
 	if err != nil {
@@ -440,6 +510,27 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 	var httpResp *http.Response
 	if resp != nil {
 		httpResp = resp.(*http.Response)
+		if ctx.Value(silentChannelTestKey{}) != nil && httpResp.Body != nil {
+			capture := &marketProbeResponseCapture{}
+			httpResp.Body = struct {
+				io.Reader
+				io.Closer
+			}{Reader: io.TeeReader(httpResp.Body, capture), Closer: httpResp.Body}
+			defer func() {
+				body := capture.Bytes()
+				if capture.overflow {
+					body = nil
+				}
+				protocol := endpointType
+				switch apiType {
+				case constant.APITypeAnthropic:
+					protocol = string(constant.EndpointTypeAnthropic)
+				case constant.APITypeGemini:
+					protocol = string(constant.EndpointTypeGemini)
+				}
+				outcome.rawProbeUsage = service.ParseMarketProbeRawUsage(body, protocol)
+			}()
+		}
 		if httpResp.StatusCode != http.StatusOK {
 			err := service.RelayErrorHandler(c.Request.Context(), httpResp, true)
 			common.SysError(fmt.Sprintf(
@@ -458,6 +549,10 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 				newAPIError: types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusInternalServerError),
 			}
 		}
+	}
+	if ctx.Value(silentChannelTestKey{}) != nil && httpResp != nil && strings.Contains(strings.ToLower(httpResp.Header.Get("Content-Type")), "application/json") {
+		// Some compatible upstreams return JSON even when stream was requested.
+		info.IsStream, isStream = false, false
 	}
 	usageA, respErr := adaptor.DoResponse(c, httpResp, info)
 	if respErr != nil {
@@ -499,7 +594,13 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 	consumedTime := float64(milliseconds) / 1000.0
 	other := buildTestLogOther(c, info, priceData, usage, tieredResult)
 	if ctx.Value(silentChannelTestKey{}) != nil {
-		return testResult{context: c}
+		estimated := common.GetContextKeyBool(c, constant.ContextKeyLocalCountTokens) || (usage.BillingUsage != nil && usage.BillingUsage.Estimated)
+		switch usageA.(type) {
+		case *dto.Usage, dto.Usage:
+		default:
+			estimated = true
+		}
+		return testResult{context: c, usage: usage, usageEstimated: estimated}
 	}
 	model.RecordConsumeLog(c, testUserID, model.RecordConsumeLogParams{
 		ChannelId:        channel.Id,
@@ -694,6 +795,43 @@ func detectErrorMessageFromJSONBytes(jsonBytes []byte) string {
 		return "upstream returned error payload"
 	}
 	return message
+}
+
+// The market uses a fixed request profile, independent of manual channel tests.
+func buildMarketProbeRequest(modelName, endpointType string, channel *model.Channel, isStream bool) dto.Request {
+	const prompt = "Reply with exactly the word OK. Do not add explanations."
+	request := buildTestRequest(modelName, endpointType, channel, isStream)
+	switch value := request.(type) {
+	case *dto.GeneralOpenAIRequest:
+		value.Messages = []dto.Message{{Role: "user", Content: prompt}}
+		value.MaxTokens = nil
+		value.MaxCompletionTokens = lo.ToPtr(uint(256))
+	case *dto.ClaudeRequest:
+		value.Messages = []dto.ClaudeMessage{{Role: "user", Content: prompt}}
+		value.MaxTokens = lo.ToPtr(uint(256))
+	case *dto.OpenAIResponsesRequest:
+		value.Input = json.RawMessage(`"Reply with exactly the word OK. Do not add explanations."`)
+		value.MaxOutputTokens = lo.ToPtr(uint(256))
+	case *dto.GeminiChatRequest:
+		value.Contents = []dto.GeminiChatContent{{Role: "user", Parts: []dto.GeminiPart{{Text: prompt}}}}
+		value.GenerationConfig.MaxOutputTokens = lo.ToPtr(uint(256))
+	}
+	return request
+}
+
+type marketProbeResponseCapture struct {
+	bytes.Buffer
+	overflow bool
+}
+
+func (capture *marketProbeResponseCapture) Write(data []byte) (int, error) {
+	const limit = 2 * 1024 * 1024
+	remaining := limit - capture.Len()
+	if len(data) > remaining {
+		capture.overflow = true
+	}
+	_, _ = capture.Buffer.Write(data[:min(len(data), remaining)])
+	return len(data), nil
 }
 
 func buildTestRequest(model string, endpointType string, channel *model.Channel, isStream bool) dto.Request {

@@ -38,6 +38,7 @@ export const usageLogSchema = z.object({
   use_time: z.number().default(0),
   is_stream: z.boolean().default(false),
   channel: z.number().default(0),
+  market_listing_id: z.number().optional(),
   channel_name: z.string().nullish().default(''),
   token_id: z.number().default(0),
   group: z.string().default(''),

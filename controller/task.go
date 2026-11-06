@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"net/http"
 	"strconv"
 
 	"github.com/QuantumNous/new-api/common"
@@ -37,6 +38,10 @@ func GetAllTask(c *gin.Context) {
 }
 
 func GetUserTask(c *gin.Context) {
+	if !common.TaskEnabled {
+		c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "Task logs are disabled by the administrator."})
+		return
+	}
 	pageInfo := common.GetPageQuery(c)
 
 	userId := c.GetInt("id")

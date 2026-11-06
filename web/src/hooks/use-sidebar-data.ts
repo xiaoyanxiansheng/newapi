@@ -20,23 +20,20 @@ import {
   Activity,
   Box,
   CreditCard,
-  FileText,
   Key,
   LayoutDashboard,
   ListTodo,
-  Radio,
   ServerCog,
   Settings,
   Ticket,
   User,
   Users,
-  Wallet,
   Store,
-  ListChecks,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { type SidebarData } from '@/components/layout/types'
+import type { SidebarData } from '@/components/layout/types'
+import { useStatus } from '@/hooks/use-status'
 import { ROLE } from '@/lib/roles'
 import { getPluginSidebarItems } from '@/plugins/manifest'
 
@@ -48,6 +45,7 @@ import { getPluginSidebarItems } from '@/plugins/manifest'
  */
 export function useSidebarData(): SidebarData {
   const { t } = useTranslation()
+  const { status } = useStatus()
 
   const pluginItems = getPluginSidebarItems(t)
 
@@ -58,37 +56,39 @@ export function useSidebarData(): SidebarData {
         title: t('General'),
         items: [
           {
-            title: t('Overview'),
+            title: t('Workspace'),
             url: '/dashboard/overview',
             icon: Activity,
           },
           {
-            title: t('Dashboard'),
-            url: '/dashboard/models',
-            icon: LayoutDashboard,
-          },
-          {
-            title: t('API Keys'),
-            url: '/keys',
-            icon: Key,
-          },
-          {
-            title: t('Model Plaza'),
+            title: t('Models'),
             url: '/market',
             icon: Store,
           },
           {
-            title: t('Usage Logs'),
-            url: '/usage-logs/common',
-            icon: FileText,
+            title: t('API Access'),
+            url: '/keys',
+            icon: Key,
           },
           {
-            title: t('Task Logs'),
-            url: '/usage-logs/task',
-            activeUrls: ['/usage-logs/drawing'],
-            configUrls: ['/usage-logs/drawing', '/usage-logs/task'],
-            icon: ListTodo,
+            title: t('Usage'),
+            url: '/dashboard/models',
+            activeUrls: ['/usage-logs/common'],
+            configUrls: ['/dashboard/models', '/usage-logs/common'],
+            icon: LayoutDashboard,
           },
+          ...(status?.enable_task === false
+            ? []
+            : [
+                {
+                  title: t('Task Logs'),
+                  url: '/usage-logs/task',
+                  activeUrls: ['/usage-logs/drawing'],
+                  configUrls: ['/usage-logs/drawing', '/usage-logs/task'],
+                  icon: ListTodo,
+                  requiredRole: ROLE.ADMIN,
+                },
+              ]),
           ...pluginItems,
         ],
       },
@@ -97,13 +97,10 @@ export function useSidebarData(): SidebarData {
         title: t('Personal'),
         items: [
           {
-            title: t('Wallet'),
-            url: '/wallet',
-            icon: Wallet,
-          },
-          {
-            title: t('Profile'),
+            title: t('Account'),
             url: '/profile',
+            activeUrls: ['/wallet'],
+            configUrls: ['/profile', '/wallet'],
             icon: User,
           },
         ],
@@ -113,19 +110,15 @@ export function useSidebarData(): SidebarData {
         title: t('Admin'),
         items: [
           {
-            title: t('Channels'),
-            url: '/channels',
-            icon: Radio,
-          },
-          {
             title: t('Models'),
             url: '/models/metadata',
             icon: Box,
           },
           {
-            title: t('Market Listings'),
-            url: '/market-admin',
-            icon: ListChecks,
+            title: t('Upstream channels'),
+            url: '/upstream-catalog',
+            icon: ServerCog,
+            requiredRole: ROLE.ADMIN,
           },
           {
             title: t('Users'),

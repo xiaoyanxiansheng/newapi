@@ -47,7 +47,7 @@ func TestMain(m *testing.M) {
 		&Log{},
 		&Channel{},
 		&QuotaData{},
-		&Ability{},
+		&Ability{}, &UpstreamAccount{}, &UpstreamSource{}, &UpstreamReview{}, &UpstreamRefresh{}, &MarketListing{}, &MarketStat{}, &MarketProbeUsageRecord{},
 		&TopUp{},
 		&SubscriptionPlan{},
 		&SubscriptionOrder{},

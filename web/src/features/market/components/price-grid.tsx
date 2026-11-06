@@ -18,13 +18,20 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useTranslation } from 'react-i18next'
 
-import { getDynamicPricingSummary } from '@/features/pricing/lib/dynamic-price'
+import {
+  formatDynamicUnitPrice,
+  getDynamicPricingSummary,
+} from '@/features/pricing/lib/dynamic-price'
 import { isTokenBasedModel } from '@/features/pricing/lib/model-helpers'
 import { formatPrice, formatRequestPrice } from '@/features/pricing/lib/price'
 import { cn } from '@/lib/utils'
 
-import { MARKET_TOKEN_UNIT, toPricingModel } from '../lib/market-helpers'
-import type { MarketModel } from '../types'
+import {
+  MARKET_TOKEN_UNIT,
+  toPricingModel,
+  toListingPricingModel,
+} from '../lib/market-helpers'
+import type { MarketModel, MarketChannel } from '../types'
 
 type PriceCell = {
   key: string
@@ -33,10 +40,13 @@ type PriceCell = {
 }
 
 type PriceGridProps = {
+  channel?: MarketChannel
   model: MarketModel
   /** Channel ratio applied on top of the base model price */
   ratio: number
   className?: string
+  compact?: boolean
+  plaza?: boolean
 }
 
 function hasRatio(value: number | null | undefined): boolean {
@@ -46,20 +56,46 @@ function hasRatio(value: number | null | undefined): boolean {
 /** 4-cell price grid (input / output / cache read / cache write per 1M). */
 export function PriceGrid(props: PriceGridProps) {
   const { t } = useTranslation()
-  const pricing = toPricingModel(props.model, props.ratio)
+  const pricing = props.channel
+    ? toListingPricingModel(props.model, props.channel)
+    : toPricingModel(props.model, props.ratio)
+  const displayRatio = props.channel?.billing_mode?.includes('expr')
+    ? 1
+    : props.ratio
 
   let cells: PriceCell[]
   let fallback: string | null = null
 
   const dynamicSummary = getDynamicPricingSummary(pricing, {
     tokenUnit: MARKET_TOKEN_UNIT,
-    groupRatioMultiplier: props.ratio,
+    groupRatioMultiplier: displayRatio,
   })
 
   if (dynamicSummary) {
     const formatted = new Map(
       dynamicSummary.entries.map((entry) => [entry.field, entry.formatted])
     )
+    if (props.channel?.billing_mode === 'fixed_expr') {
+      for (const [variable, field] of [
+        ['p', 'inputPrice'],
+        ['c', 'outputPrice'],
+        ['cr', 'cacheReadPrice'],
+        ['cc', 'cacheCreatePrice'],
+      ]) {
+        if (
+          dynamicSummary.tier?.[field] === 0 &&
+          new RegExp(`\\b${variable}\\s*\\*`).test(dynamicSummary.rawExpression)
+        ) {
+          formatted.set(
+            field,
+            formatDynamicUnitPrice(0, {
+              tokenUnit: MARKET_TOKEN_UNIT,
+              groupRatioMultiplier: 1,
+            })
+          )
+        }
+      }
+    }
     cells = [
       { key: 'input', label: t('Input /1M'), field: 'inputPrice' },
       { key: 'output', label: t('Output /1M'), field: 'outputPrice' },
@@ -129,21 +165,47 @@ export function PriceGrid(props: PriceGridProps) {
     <dl
       className={cn(
         'grid gap-1.5',
-        cells.length > 1
-          ? 'grid-cols-2 @xl:grid-cols-4 @4xl:grid-cols-2'
-          : 'grid-cols-1',
+        cells.length > 1 ? 'grid-cols-2' : 'grid-cols-1',
+        !props.compact && !props.plaza && '@xl:grid-cols-4 @4xl:grid-cols-2',
+        // Keep the plaza prices at two columns. The labels contain units and
+        // become unreadable when four cells are forced into a narrow card.
+        props.plaza && 'grid-cols-2',
         props.className
       )}
     >
-      {cells.map((cell) => (
+      {(props.compact
+        ? cells
+            .filter((cell) => ['output', 'input', 'request'].includes(cell.key))
+            .sort(
+              (a, b) => Number(b.key === 'output') - Number(a.key === 'output')
+            )
+        : [...cells].sort((a, b) =>
+            props.plaza
+              ? Number(b.key === 'output') - Number(a.key === 'output')
+              : 0
+          )
+      ).map((cell) => (
         <div
           key={cell.key}
-          className='bg-muted/50 flex min-w-0 flex-col rounded-md px-2 py-1'
+          className={cn(
+            'bg-muted/30 flex min-w-0 flex-col rounded-lg px-3 py-2',
+            (props.compact || props.plaza) &&
+              ['output', 'request'].includes(cell.key) &&
+              'bg-primary/6'
+          )}
         >
-          <dt className='text-muted-foreground text-[11px] whitespace-nowrap'>
+          <dt className='text-muted-foreground text-[11px] leading-tight'>
             {cell.label}
           </dt>
-          <dd className='truncate font-mono text-[13px] font-semibold'>
+          <dd
+            title={cell.value}
+            className={cn(
+              'truncate font-mono text-[13px] font-semibold',
+              (props.compact || props.plaza) &&
+                ['output', 'request'].includes(cell.key) &&
+                'text-primary mt-1 text-base tracking-tight'
+            )}
+          >
             {cell.value}
           </dd>
         </div>

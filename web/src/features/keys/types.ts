@@ -96,6 +96,7 @@ export interface ApiKeyFormData {
 
 export interface RouteChannel {
   channel_id: number
+  listing_id?: number
   ratio: number
   description: string
   available: boolean

@@ -16,79 +16,119 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { Globe2, Layers, MapPin, Check } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { getLobeIcon } from '@/lib/lobe-icon'
 import { cn } from '@/lib/utils'
 
 import type { VendorSection } from '../lib/market-helpers'
 import type { MarketRegion } from '../types'
+import { VendorMark } from './vendor-mark'
 
+export type BrandRegion = MarketRegion | 'all'
 type MarketBrandsProps = {
   sections: VendorSection[]
   selectedVendorId: number | null
-  /** Called with null to clear the filter */
+  region: BrandRegion
+  onRegionChange: (region: BrandRegion) => void
   onSelect: (vendorId: number | null) => void
 }
 
-function useRegionTitle() {
-  const { t } = useTranslation()
-  return (region: MarketRegion): string => {
-    if (region === 'intl') return t('Overseas')
-    if (region === 'cn') return t('China')
-    return t('Other')
-  }
-}
-
-/** Brand cards grouped by region; click a card to filter, click again to clear. */
 export function MarketBrands(props: MarketBrandsProps) {
   const { t } = useTranslation()
-  const regionTitle = useRegionTitle()
-
-  if (props.sections.length === 0) return null
-
+  const regions = [
+    { id: 'all' as const, label: t('All brands'), icon: Layers },
+    { id: 'intl' as const, label: t('International providers'), icon: Globe2 },
+    { id: 'cn' as const, label: t('Domestic providers'), icon: MapPin },
+  ]
+  const vendors = props.sections
+    .filter(
+      (section) => props.region === 'all' || section.region === props.region
+    )
+    .flatMap((section) =>
+      section.vendors.map((card) => ({ ...card, region: section.region }))
+    )
   return (
-    <div className='flex flex-col gap-4'>
-      {props.sections.map((section) => (
-        <section
-          key={section.region || 'other'}
-          className='flex flex-col gap-2'
+    <section aria-label={t('Choose a brand')} className='space-y-3'>
+      <div className='flex flex-wrap items-center gap-3'>
+        <h3 className='text-sm font-semibold'>{t('Choose a brand')}</h3>
+        <div className='flex flex-wrap gap-1.5'>
+          {regions.map((region) => (
+            <button
+              key={region.id}
+              type='button'
+              aria-pressed={props.region === region.id}
+              onClick={() => props.onRegionChange(region.id)}
+              className={cn(
+                'hwjai-region-tab',
+                `hwjai-region-${region.id}`,
+                props.region === region.id && 'is-selected'
+              )}
+            >
+              <region.icon className='size-3.5' aria-hidden='true' />
+              {region.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className='hwjai-selection-rail'>
+        <button
+          type='button'
+          aria-pressed={props.selectedVendorId === null}
+          onClick={() => props.onSelect(null)}
+          className={cn(
+            'hwjai-brand-choice',
+            props.selectedVendorId === null && 'is-selected'
+          )}
         >
-          <h2 className='text-muted-foreground text-sm font-semibold'>
-            {regionTitle(section.region)}
-          </h2>
-          <div className='grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6'>
-            {section.vendors.map(({ vendor, channelCount }) => {
-              const selected = props.selectedVendorId === vendor.id
-              return (
-                <button
-                  key={vendor.id}
-                  type='button'
-                  aria-pressed={selected}
-                  onClick={() => props.onSelect(selected ? null : vendor.id)}
-                  className={cn(
-                    'bg-card hover:bg-muted/50 flex items-center gap-2.5 rounded-xl border p-2.5 text-left transition-colors',
-                    selected &&
-                      'border-primary bg-primary/5 ring-primary/30 ring-2'
-                  )}
-                >
-                  <span className='bg-muted/40 flex size-9 shrink-0 items-center justify-center rounded-lg'>
-                    {getLobeIcon(vendor.icon, 24)}
-                  </span>
-                  <span className='min-w-0'>
-                    <span className='block truncate text-sm font-semibold'>
-                      {vendor.name}
-                    </span>
-                    <span className='text-muted-foreground block text-xs'>
-                      {t('{{count}} channels', { count: channelCount })}
-                    </span>
-                  </span>
-                </button>
+          <span className='bg-primary/10 text-primary flex size-9 shrink-0 items-center justify-center rounded-xl'>
+            <Layers className='size-5' />
+          </span>
+          <span>
+            <span className='block text-sm font-semibold'>
+              {t('All brands')}
+            </span>
+            <span className='text-muted-foreground text-xs'>
+              {t('{{count}} providers', { count: vendors.length })}
+            </span>
+          </span>
+        </button>
+        {vendors.map(({ vendor, channelCount, region }) => (
+          <button
+            key={vendor.id}
+            type='button'
+            aria-pressed={props.selectedVendorId === vendor.id}
+            onClick={() =>
+              props.onSelect(
+                props.selectedVendorId === vendor.id ? null : vendor.id
               )
-            })}
-          </div>
-        </section>
-      ))}
-    </div>
+            }
+            className={cn(
+              'hwjai-brand-choice',
+              `hwjai-brand-${region}`,
+              props.selectedVendorId === vendor.id && 'is-selected'
+            )}
+          >
+            <span className='bg-background/80 flex size-9 shrink-0 items-center justify-center rounded-xl'>
+              <VendorMark icon={vendor.icon} name={vendor.name} />
+            </span>
+            <span className='min-w-0'>
+              <span className='block truncate text-sm font-semibold'>
+                {vendor.name}
+              </span>
+              <span className='text-muted-foreground text-xs'>
+                {t('{{count}} channels', { count: channelCount })}
+              </span>
+            </span>
+            {props.selectedVendorId === vendor.id && (
+              <Check
+                className='text-primary ml-auto size-3.5 shrink-0'
+                aria-hidden='true'
+              />
+            )}
+          </button>
+        ))}
+      </div>
+    </section>
   )
 }

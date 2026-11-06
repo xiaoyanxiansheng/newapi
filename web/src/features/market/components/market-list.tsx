@@ -21,6 +21,7 @@ import { useTranslation } from 'react-i18next'
 
 import { Skeleton } from '@/components/ui/skeleton'
 
+import { sortMarketModels, type MarketSort } from '../lib/market-helpers'
 import type { MarketActions, MarketModel, MarketVendor } from '../types'
 import { MarketModelRow } from './market-model-row'
 
@@ -31,6 +32,7 @@ type MarketListProps = {
   isLoading: boolean
   /** True when the market has models but none match the current filters */
   isFiltered: boolean
+  sort: MarketSort
 }
 
 export function MarketList(props: MarketListProps) {
@@ -38,9 +40,9 @@ export function MarketList(props: MarketListProps) {
 
   if (props.isLoading) {
     return (
-      <div className='flex flex-col gap-3'>
+      <div className='flex flex-col gap-3' aria-busy='true'>
         {Array.from({ length: 6 }, (_, index) => (
-          <Skeleton key={index} className='h-28 w-full rounded-xl' />
+          <Skeleton key={index} className='h-28 w-full rounded-2xl' />
         ))}
       </div>
     )
@@ -48,7 +50,7 @@ export function MarketList(props: MarketListProps) {
 
   if (props.models.length === 0) {
     return (
-      <div className='flex min-h-[280px] flex-col items-center justify-center rounded-lg border border-dashed px-6 py-12 text-center'>
+      <div className='bg-card/60 flex flex-col items-center justify-center rounded-2xl border border-dashed px-6 py-8 text-center'>
         <Store
           className='text-muted-foreground/40 mb-3 size-10'
           aria-hidden='true'
@@ -63,10 +65,15 @@ export function MarketList(props: MarketListProps) {
   }
 
   return (
-    <div className='flex flex-col gap-3'>
-      {props.models.map((model) => (
+    <div className='flex flex-col gap-2.5'>
+      {sortMarketModels(
+        props.models.flatMap((model) =>
+          model.channels.map((channel) => ({ ...model, channels: [channel] }))
+        ),
+        props.sort
+      ).map((model) => (
         <MarketModelRow
-          key={model.model_name}
+          key={`${model.model_name}-${model.channels[0].listing_id}`}
           model={model}
           vendor={props.vendors.find((item) => item.id === model.vendor_id)}
           actions={props.actions}

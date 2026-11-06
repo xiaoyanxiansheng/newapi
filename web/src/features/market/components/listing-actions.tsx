@@ -16,14 +16,14 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { ArrowDown, ArrowUp, Check, Copy, LogOut, Plus } from 'lucide-react'
+import { ArrowDown, ArrowUp, Check, LogOut, Plus } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
 import { cn } from '@/lib/utils'
 
+import { formatListingId } from '../lib/market-helpers'
 import type { MarketActions, MarketChannel } from '../types'
 import { DisabledHint } from './disabled-hint'
 
@@ -47,7 +47,6 @@ type ListingActionsProps = {
 
 export function ListingActions(props: ListingActionsProps) {
   const { t } = useTranslation()
-  const { copyToClipboard } = useCopyToClipboard()
   const { actions, channel, variant } = props
   const noKey = actions.tokenId === null
   const isModel = variant === 'model'
@@ -60,18 +59,6 @@ export function ListingActions(props: ListingActionsProps) {
         props.className
       )}
     >
-      {isModel && (
-        <Button
-          variant='outline'
-          size='sm'
-          aria-label={t('Copy name')}
-          onClick={() => copyToClipboard(props.modelName)}
-        >
-          <Copy data-icon='inline-start' />
-          {t('Copy name')}
-        </Button>
-      )}
-
       {channel.joined ? (
         <>
           <Badge variant='secondary' className='justify-center'>
@@ -89,7 +76,12 @@ export function ListingActions(props: ListingActionsProps) {
                   aria-label={t('Move up')}
                   disabled={actions.busy || !props.moveState?.canUp}
                   onClick={() =>
-                    actions.onMove?.(props.modelName, channel.channel_id, -1)
+                    actions.onMove?.(
+                      props.modelName,
+                      channel.channel_id,
+                      -1,
+                      channel.listing_id
+                    )
                   }
                 >
                   <ArrowUp />
@@ -100,7 +92,12 @@ export function ListingActions(props: ListingActionsProps) {
                   aria-label={t('Move down')}
                   disabled={actions.busy || !props.moveState?.canDown}
                   onClick={() =>
-                    actions.onMove?.(props.modelName, channel.channel_id, 1)
+                    actions.onMove?.(
+                      props.modelName,
+                      channel.channel_id,
+                      1,
+                      channel.listing_id
+                    )
                   }
                 >
                   <ArrowDown />
@@ -114,7 +111,11 @@ export function ListingActions(props: ListingActionsProps) {
               aria-label={t('Leave route')}
               disabled={actions.busy}
               onClick={() =>
-                actions.onLeave(props.modelName, channel.channel_id)
+                actions.onLeave(
+                  props.modelName,
+                  channel.channel_id,
+                  channel.listing_id
+                )
               }
             >
               <LogOut data-icon='inline-start' />
@@ -129,8 +130,8 @@ export function ListingActions(props: ListingActionsProps) {
               variant='outline'
               className='text-muted-foreground h-auto justify-center py-0.5 text-center whitespace-normal'
             >
-              {t('Joined #{{id}} (slot {{position}})', {
-                id: props.joinedElsewhere.channel_id,
+              {t('Joined {{id}} (slot {{position}})', {
+                id: formatListingId(props.joinedElsewhere.listing_id),
                 position: props.joinedElsewhere.position,
               })}
             </Badge>
@@ -144,7 +145,11 @@ export function ListingActions(props: ListingActionsProps) {
               aria-label={t('Join route')}
               disabled={noKey || actions.busy}
               onClick={() =>
-                actions.onJoin(props.modelName, channel.channel_id)
+                actions.onJoin(
+                  props.modelName,
+                  channel.channel_id,
+                  channel.listing_id
+                )
               }
             >
               <Plus data-icon='inline-start' />

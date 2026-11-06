@@ -466,27 +466,17 @@ func BatchDeleteChannels(ids []int) (int64, error) {
 	if len(ids) == 0 {
 		return 0, nil
 	}
-	// 使用事务 分批删除channel表和abilities表
-	tx := DB.Begin()
-	if tx.Error != nil {
-		return 0, tx.Error
-	}
 	var deletedCount int64
-	for _, chunk := range lo.Chunk(ids, 200) {
-		result := tx.Where("id in (?)", chunk).Delete(&Channel{})
-		if result.Error != nil {
-			tx.Rollback()
-			return 0, result.Error
-		}
-		deletedCount += result.RowsAffected
-		if err := tx.Where("channel_id in (?)", chunk).Delete(&Ability{}).Error; err != nil {
-			tx.Rollback()
-			return 0, err
-		}
-	}
-	if err := tx.Commit().Error; err != nil {
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		var err error
+		deletedCount, err = deleteChannelTree(tx, ids)
+		return err
+	})
+	if err != nil {
 		return 0, err
 	}
+	InitChannelCache()
+	InvalidateMarketListings()
 	return deletedCount, nil
 }
 
@@ -609,12 +599,7 @@ func (channel *Channel) UpdateBalance(balance float64) {
 }
 
 func (channel *Channel) Delete() error {
-	var err error
-	err = DB.Delete(channel).Error
-	if err != nil {
-		return err
-	}
-	err = channel.DeleteAbilities()
+	_, err := BatchDeleteChannels([]int{channel.Id})
 	return err
 }
 
@@ -885,13 +870,30 @@ func updateChannelUsedQuota(id int, quota int) {
 }
 
 func DeleteChannelByStatus(status int64) (int64, error) {
-	result := DB.Where("status = ?", status).Delete(&Channel{})
-	return result.RowsAffected, result.Error
+	return deleteChannelsByStatus([]int64{status})
 }
 
 func DeleteDisabledChannel() (int64, error) {
-	result := DB.Where("status = ? or status = ?", common.ChannelStatusAutoDisabled, common.ChannelStatusManuallyDisabled).Delete(&Channel{})
-	return result.RowsAffected, result.Error
+	return deleteChannelsByStatus([]int64{common.ChannelStatusAutoDisabled, common.ChannelStatusManuallyDisabled})
+}
+
+func deleteChannelsByStatus(statuses []int64) (int64, error) {
+	var deleted int64
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		var ids []int
+		if err := lockForUpdate(tx).Model(&Channel{}).Where("status IN ?", statuses).Order("id asc").Pluck("id", &ids).Error; err != nil {
+			return err
+		}
+		var err error
+		deleted, err = deleteChannelTree(tx, ids)
+		return err
+	})
+	if err != nil {
+		return 0, err
+	}
+	InitChannelCache()
+	InvalidateMarketListings()
+	return deleted, nil
 }
 
 func GetPaginatedTags(offset int, limit int) ([]*string, error) {

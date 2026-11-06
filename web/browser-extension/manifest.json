@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "hwjai 上游连接助手",
+  "version": "1.0.3",
+  "description": "统一连接上游网站，复用已有登录，授权读取现有 Key 和人民币余额。基于 new-api / QuantumNous。",
+  "minimum_chrome_version": "109",
+  "permissions": ["tabs", "scripting", "storage"],
+  "optional_host_permissions": ["https://*/*"],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://hwjai.me/*",
+        "http://127.0.0.1/*",
+        "http://localhost/*"
+      ],
+      "js": ["bridge.js"],
+      "run_at": "document_start"
+    }
+  ]
+}

@@ -18,6 +18,10 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { AxiosError } from 'axios'
 
+import {
+  getDynamicPricingTiers,
+  isDynamicPricingModel,
+} from '@/features/pricing/lib/dynamic-price'
 import type { PricingModel, TokenUnit } from '@/features/pricing/types'
 import { handleServerError } from '@/lib/handle-server-error'
 
@@ -27,6 +31,7 @@ import type {
   MarketChannel,
   MarketModel,
   MarketRegion,
+  MarketStatsWindow,
   MarketVendor,
 } from '../types'
 
@@ -34,6 +39,12 @@ const MARKET_RATIO_GROUP = 'market'
 
 /** The plaza always quotes token prices per million tokens. */
 export const MARKET_TOKEN_UNIT: TokenUnit = 'M'
+
+/** Display grouping only; routing and billing keep the full access model name. */
+export function getMarketBaseModelName(name: string): string {
+  const baseName = /^(.+)@s[1-9][0-9]*c[1-9][0-9]*$/.exec(name)?.[1] ?? name
+  return baseName.toLowerCase() === 'minimax-m3' ? 'MiniMax-M3' : baseName
+}
 
 /**
  * Adapt a market model to the pricing model shape so the existing pricing
@@ -50,6 +61,29 @@ export function toPricingModel(
     enable_groups: [MARKET_RATIO_GROUP],
     group_ratio: { [MARKET_RATIO_GROUP]: ratio },
   }
+}
+
+export function toListingPricingModel(
+  model: MarketModel,
+  channel: MarketChannel
+): PricingModel {
+  const pricing = toPricingModel(
+    { ...model, ...channel.pricing },
+    channel.ratio
+  )
+  if (
+    channel.billing_mode === 'tiered_expr' ||
+    channel.billing_mode === 'fixed_expr'
+  ) {
+    return {
+      ...pricing,
+      billing_mode: 'tiered_expr',
+      billing_expr: channel.billing_expr,
+      quota_type: 0,
+      group_ratio: { [MARKET_RATIO_GROUP]: 1 },
+    }
+  }
+  return pricing
 }
 
 // ----------------------------------------------------------------------------
@@ -107,8 +141,14 @@ export const TONE_TEXT_CLASS: Record<RateTone, string> = {
 
 export function blockTone(block: MarketBlock | undefined): RateTone {
   const total = (block?.ok ?? 0) + (block?.fail ?? 0)
-  if (total <= 0) return 'none'
+  if (total <= 0) return rateTone(block?.inherited_rate)
   return rateTone((block?.ok ?? 0) / total)
+}
+
+/** Real request rate when available; otherwise the retained realtime state. */
+export function windowDisplayRate(window?: MarketStatsWindow): number | null {
+  if (window?.rate != null) return window.rate
+  return window?.blocks.at(-1)?.inherited_rate ?? null
 }
 
 // ----------------------------------------------------------------------------
@@ -116,7 +156,10 @@ export function blockTone(block: MarketBlock | undefined): RateTone {
 // ----------------------------------------------------------------------------
 
 function compareByRatio(a: MarketChannel, b: MarketChannel): number {
-  return a.ratio - b.ratio || a.channel_id - b.channel_id
+  return (
+    (a.output_price ?? a.ratio) - (b.output_price ?? b.ratio) ||
+    a.channel_id - b.channel_id
+  )
 }
 
 /** Joined channels first (by route position), then the rest by ratio. */
@@ -145,26 +188,67 @@ export function hasJoinedChannel(model: MarketModel): boolean {
 
 function getTotalScore(model: MarketModel): number | null {
   const total = getRepresentativeChannel(model)?.score?.total
-  return typeof total === 'number' ? total : null
+  return typeof total === 'number' && Number.isFinite(total) ? total : null
 }
 
-/**
- * Fixed plaza ordering: models joined by the key first, then the
- * representative channel's total score (null last), then the model name.
- */
-export function sortMarketModels(models: MarketModel[]): MarketModel[] {
+/** Output USD per million tokens, or USD per request for fixed-price models. */
+export function getRepresentativePrice(model: MarketModel): number | null {
+  const channel = getRepresentativeChannel(model)
+  if (!channel) return null
+  if (
+    typeof channel.output_price === 'number' &&
+    Number.isFinite(channel.output_price)
+  ) {
+    return channel.output_price
+  }
+  let price: number
+  const listing = toListingPricingModel(model, channel)
+  if (isDynamicPricingModel(listing)) {
+    const output = getDynamicPricingTiers(listing)[0]?.outputPrice
+    price = typeof output === 'number' ? output * channel.ratio : Number.NaN
+  } else if (model.quota_type === 1) {
+    price =
+      typeof model.model_price === 'number'
+        ? model.model_price * channel.ratio
+        : Number.NaN
+  } else {
+    price = model.model_ratio * 2 * model.completion_ratio * channel.ratio
+  }
+  return Number.isFinite(price) && price >= 0 ? price : null
+}
+
+/** Score descending by default; output price ascending, with distinct billing units grouped. */
+export type MarketSort = 'score' | 'price' | 'listed'
+
+export function sortMarketModels(
+  models: MarketModel[],
+  sort: MarketSort = 'score'
+): MarketModel[] {
   return [...models].sort((a, b) => {
+    const sortValue = (model: MarketModel): number | null => {
+      if (sort === 'price') return getRepresentativePrice(model)
+      if (sort === 'listed') {
+        return getRepresentativeChannel(model)?.listed_at ?? 0
+      }
+      return getTotalScore(model)
+    }
+    const valueA = sortValue(a)
+    const valueB = sortValue(b)
+    if (valueA === null && valueB !== null) return 1
+    if (valueB === null && valueA !== null) return -1
+    if (sort === 'price' && valueA !== null && valueB !== null) {
+      const unitA = a.quota_type === 1 ? 1 : 0
+      const unitB = b.quota_type === 1 ? 1 : 0
+      if (unitA !== unitB) return unitA - unitB
+    }
+    if (valueA !== valueB) {
+      if (valueA === null) return 1
+      if (valueB === null) return -1
+      return sort === 'price' ? valueA - valueB : valueB - valueA
+    }
     const pinnedA = hasJoinedChannel(a)
     const pinnedB = hasJoinedChannel(b)
     if (pinnedA !== pinnedB) return pinnedA ? -1 : 1
-
-    const scoreA = getTotalScore(a)
-    const scoreB = getTotalScore(b)
-    if (scoreA !== scoreB) {
-      if (scoreA === null) return 1
-      if (scoreB === null) return -1
-      return scoreB - scoreA
-    }
     return (a.model_name || '').localeCompare(b.model_name || '')
   })
 }

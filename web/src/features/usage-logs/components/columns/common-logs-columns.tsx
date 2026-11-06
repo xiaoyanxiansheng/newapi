@@ -44,12 +44,17 @@ import { LOG_TYPE_ALL_VALUE } from '../../constants'
 import type { UsageLog } from '../../data/schema'
 import {
   formatModelName,
+  getReasoningEffortVariant,
   getTieredBillingSummary,
   hasAnyCacheTokens,
   parseLogOther,
   isViolationFeeLog,
   renderAuditContent,
 } from '../../lib/format'
+import {
+  formatLogListingId,
+  formatLogListingChain,
+} from '../../lib/listing-identity'
 import {
   isDisplayableLogType,
   isTimingLogType,
@@ -323,8 +328,8 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
     columns.push(
       {
         id: 'channel',
-        header: t('Channel'),
-        accessorFn: (row) => row.channel,
+        header: t('Model ID'),
+        accessorFn: (row) => row.market_listing_id,
         cell: function ChannelCell({ row }) {
           const { sensitiveVisible, setAffinityTarget, setAffinityDialogOpen } =
             useUsageLogsContext()
@@ -334,19 +339,11 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
 
           const other = parseLogOther(log.other)
           const affinity = other?.admin_info?.channel_affinity
-          const rawUseChannel = other?.admin_info?.use_channel ?? []
-          const useChannel = Array.isArray(rawUseChannel)
-            ? rawUseChannel.map(String).filter(Boolean)
-            : []
-          const hasRetryChain = useChannel.length > 1
-          const channelChain = hasRetryChain
-            ? useChannel.join(' → ')
-            : undefined
-          const channelDisplay = log.channel_name
-            ? `${log.channel_name} #${log.channel}`
-            : `#${log.channel}`
-          const channelIdDisplay = `#${log.channel}`
-          const channelName = sensitiveVisible ? log.channel_name : '••••'
+          const channelChain = formatLogListingChain(
+            other?.admin_info?.use_market_listings
+          )
+          const hasRetryChain = Boolean(channelChain)
+          const channelIdDisplay = formatLogListingId(log.market_listing_id)
           const multiKeyIndex = other?.admin_info?.multi_key_index
           const showMultiKeyIndex =
             other?.admin_info?.is_multi_key === true &&
@@ -364,8 +361,9 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
                   <div className='relative inline-flex w-fit items-center gap-1'>
                     <StatusBadge
                       label={channelIdDisplay}
-                      autoColor={String(log.channel)}
-                      copyText={String(log.channel)}
+                      autoColor={String(log.market_listing_id ?? 0)}
+                      copyText={channelIdDisplay}
+                      copyable={Boolean(log.market_listing_id)}
                       size='sm'
                       showDot={false}
                       className='font-mono'
@@ -434,17 +432,10 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
                       </button>
                     )}
                   </div>
-                  {log.channel_name && (
-                    <span className='text-muted-foreground/70 truncate [font-family:var(--font-body)] !text-xs'>
-                      {channelName}
-                    </span>
-                  )}
                 </TooltipTrigger>
                 <TooltipContent>
                   <div className='space-y-1'>
-                    <p>
-                      {sensitiveVisible ? channelDisplay : channelIdDisplay}
-                    </p>
+                    <p>{channelIdDisplay}</p>
                     {channelChain && (
                       <p className='text-muted-foreground text-xs'>
                         {t('Chain')}: {channelChain}
@@ -613,10 +604,43 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
               modelName={modelInfo.name}
               actualModel={modelInfo.actualModel}
             />
+            {!isAdmin && (log.market_listing_id ?? 0) > 0 && (
+              <span className='text-muted-foreground font-mono text-xs'>
+                {formatLogListingId(log.market_listing_id)}
+              </span>
+            )}
           </div>
         )
       },
       meta: { mobileTitle: true },
+    },
+    {
+      id: 'reasoning_effort',
+      header: t('Reasoning Effort'),
+      accessorFn: (row) => parseLogOther(row.other)?.reasoning_effort ?? '',
+      cell: ({ row }) => {
+        const log = row.original
+        if (!isDisplayableLogType(log.type)) return null
+
+        const effort = parseLogOther(log.other)?.reasoning_effort?.trim()
+        if (!effort) {
+          return <span className='text-muted-foreground/60 text-xs'>-</span>
+        }
+
+        const normalizedEffort = effort.toLowerCase()
+        return (
+          <StatusBadge
+            label={normalizedEffort}
+            variant={getReasoningEffortVariant(normalizedEffort)}
+            size='sm'
+            showDot={false}
+            copyable={false}
+            className='font-mono lowercase'
+          />
+        )
+      },
+      meta: { label: t('Reasoning Effort') },
+      size: 100,
     },
     {
       accessorKey: 'is_stream',

@@ -56,7 +56,7 @@ func buildMaskedTokenResponse(token *model.Token) *tokenResponse {
 	if len(autoGroups) == 0 {
 		autoGroups = nil
 	}
-	routes := token.GetRoutes()
+	routes := model.LiveTokenRoutes(token.GetRoutes())
 	if routes == nil {
 		routes = []model.TokenRoute{}
 	}

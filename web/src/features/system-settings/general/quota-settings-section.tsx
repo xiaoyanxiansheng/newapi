@@ -35,6 +35,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { formatQuota } from '@/lib/format'
+import { useSystemConfigStore } from '@/stores/system-config-store'
 
 import { FormDirtyIndicator } from '../components/form-dirty-indicator'
 import { FormNavigationGuard } from '../components/form-navigation-guard'
@@ -49,6 +50,7 @@ import { SettingsPageFormActions } from '../components/settings-page-context'
 import { SettingsSection } from '../components/settings-section'
 import { useSettingsForm } from '../hooks/use-settings-form'
 import { useUpdateOption } from '../hooks/use-update-option'
+import { getQuotaForOneDisplayedCurrencyUnit } from './lib/quota-utils'
 
 const quotaSchema = z.object({
   QuotaForNewUser: z.coerce.number().min(0),
@@ -81,6 +83,8 @@ export function QuotaSettingsSection({
   complianceConfirmed = true,
 }: QuotaSettingsSectionProps) {
   const { t } = useTranslation()
+  const currency = useSystemConfigStore((state) => state.config.currency)
+  const quotaForOneCurrencyUnit = getQuotaForOneDisplayedCurrencyUnit(currency)
   const updateOption = useUpdateOption()
   const handleNumberChange =
     (onChange: (value: QuotaInputValue) => void) =>
@@ -134,7 +138,7 @@ export function QuotaSettingsSection({
               name='QuotaForNewUser'
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>{t('New User Quota')}</FormLabel>
+                  <FormLabel>{t('New User Quota (internal points)')}</FormLabel>
                   <FormControl>
                     <Input
                       type='number'
@@ -146,12 +150,23 @@ export function QuotaSettingsSection({
                     />
                   </FormControl>
                   <FormDescription>
-                    {t(
-                      'Initial quota given to new users ({{formattedQuota}})',
-                      {
-                        formattedQuota: formatQuotaInputValue(field.value),
-                      }
-                    )}
+                    <span className='block'>
+                      {t(
+                        'Internal quota points. Current value: {{formattedQuota}}.',
+                        {
+                          formattedQuota: formatQuotaInputValue(field.value),
+                        }
+                      )}
+                    </span>
+                    <span className='block'>
+                      {t(
+                        'At the current rate, {{quotaForOne}} points = {{oneCurrency}}. To grant 1 yuan, enter {{quotaForOne}}.',
+                        {
+                          quotaForOne: quotaForOneCurrencyUnit.toLocaleString(),
+                          oneCurrency: formatQuota(quotaForOneCurrencyUnit),
+                        }
+                      )}
+                    </span>
                   </FormDescription>
                   <FormMessage />
                 </FormItem>

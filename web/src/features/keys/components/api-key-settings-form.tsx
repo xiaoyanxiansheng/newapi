@@ -171,9 +171,9 @@ export function ApiKeySettingsForm(props: ApiKeySettingsFormProps) {
       <form
         onSubmit={form.handleSubmit(onSubmit, onInvalid)}
         inert={isSubmitting ? true : undefined}
-        className='flex flex-col gap-4 rounded-md border p-4'
+        className='bg-muted/10 flex flex-col gap-3 rounded-xl border p-3'
       >
-        <div className='grid gap-4 md:grid-cols-2'>
+        <div className='grid gap-3 md:grid-cols-2'>
           <FormField
             control={form.control}
             name='name'
@@ -193,7 +193,7 @@ export function ApiKeySettingsForm(props: ApiKeySettingsFormProps) {
               control={form.control}
               name='unlimited_quota'
               render={({ field }) => (
-                <FormItem className='flex flex-row items-center justify-between gap-3 self-end rounded-md border px-3 py-2'>
+                <FormItem className='bg-background flex flex-row items-center justify-between gap-3 self-end rounded-lg border px-3 py-2'>
                   <div className='flex flex-col gap-0.5'>
                     <FormLabel className='text-sm'>
                       {t('Unlimited Quota')}
@@ -296,7 +296,7 @@ export function ApiKeySettingsForm(props: ApiKeySettingsFormProps) {
             control={form.control}
             name='unlimited_quota'
             render={({ field }) => (
-              <FormItem className='flex flex-row items-center justify-between gap-3 rounded-md border px-3 py-2'>
+              <FormItem className='bg-background flex flex-row items-center justify-between gap-3 rounded-lg border px-3 py-2'>
                 <div className='flex flex-col gap-0.5'>
                   <FormLabel className='text-sm'>
                     {t('Unlimited Quota')}

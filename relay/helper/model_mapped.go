@@ -16,6 +16,11 @@ func ModelMappedHelper(c *gin.Context, info *common.RelayInfo, request dto.Reque
 	}
 
 	// map model name
+	accessModel := c.GetString("market_access_model")
+	if accessModel != "" && accessModel != info.OriginModelName {
+		info.UpstreamModelName = accessModel
+		info.IsModelMapped = true
+	}
 	modelMapping := c.GetString("model_mapping")
 	if modelMapping != "" && modelMapping != "{}" {
 		modelMap := make(map[string]string)
@@ -26,6 +31,9 @@ func ModelMappedHelper(c *gin.Context, info *common.RelayInfo, request dto.Reque
 
 		// 支持链式模型重定向，最终使用链尾的模型
 		currentModel := info.OriginModelName
+		if accessModel != "" {
+			currentModel = accessModel
+		}
 		visitedModels := map[string]bool{
 			currentModel: true,
 		}

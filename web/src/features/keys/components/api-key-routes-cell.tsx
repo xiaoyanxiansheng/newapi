@@ -41,7 +41,7 @@ export function ApiKeyRoutesCell(props: { apiKey: ApiKey }) {
           setOpen('routes')
         }}
       >
-        {t('{{models}} models · {{channels}} channels', {
+        {t('{{models}} models · {{channels}} IDs', {
           models: routes.length,
           channels: channelCount,
         })}

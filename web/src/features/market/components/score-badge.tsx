@@ -34,6 +34,7 @@ function scoreTone(total: number | null | undefined): RateTone {
 type ScoreBadgeProps = {
   score?: MarketScore | null
   className?: string
+  compact?: boolean
 }
 
 /** Radar chart next to the big total score. */
@@ -44,9 +45,12 @@ export function ScoreBadge(props: ScoreBadgeProps) {
 
   return (
     <div className={cn('flex items-center gap-2', props.className)}>
-      <RadarChart score={props.score} />
+      <RadarChart score={props.score} size={props.compact ? 64 : undefined} />
       <div
-        className='flex min-w-14 flex-col items-center'
+        className={cn(
+          'flex flex-col items-center',
+          props.compact ? 'min-w-10' : 'min-w-14'
+        )}
         title={hasTotal ? undefined : t('Not enough data')}
       >
         <span className='text-muted-foreground text-[11px]'>
@@ -55,6 +59,7 @@ export function ScoreBadge(props: ScoreBadgeProps) {
         <span
           className={cn(
             'font-mono text-3xl leading-tight font-bold',
+            props.compact && 'text-2xl',
             TONE_TEXT_CLASS[scoreTone(total)]
           )}
           aria-label={

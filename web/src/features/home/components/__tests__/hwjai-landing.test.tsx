@@ -181,50 +181,63 @@ afterEach(async () => {
 })
 
 describe('hwjai landing composition', () => {
-  test('empty configured content selects direct account access instead of the old demo and retains project attribution', async () => {
-    localStorage.setItem(
-      'home_page_content',
-      '<h1>Previously configured home</h1>'
-    )
-    await renderHome()
+  test.each([undefined, '<p>Custom footer</p>'])(
+    'empty configured content selects direct account access and uses site copyright with separate upstream credit (custom footer: %s)',
+    async (footerHtml) => {
+      useSystemConfigStore.setState({
+        config: {
+          ...useSystemConfigStore.getState().config,
+          systemName: 'hwjai',
+          footerHtml,
+        },
+      })
+      localStorage.setItem(
+        'home_page_content',
+        '<h1>Previously configured home</h1>'
+      )
+      await renderHome()
 
-    const main = screen.getByRole('main')
-    expect(screen.getAllByRole('main')).toHaveLength(1)
-    expect(main).toHaveAttribute('id', 'main-content')
-    const account = within(main).getByRole('tabpanel', { name: 'Sign in' })
-    expect(within(account).getByLabelText('Username or Email')).toBeVisible()
-    expect(within(account).getByLabelText('Password')).toBeVisible()
-    expect(
-      within(account).getByRole('button', { name: 'Sign in' })
-    ).toBeEnabled()
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-    expect(
-      screen.queryByText('upstream services integrated')
-    ).not.toBeInTheDocument()
-    expect(screen.queryByText('model billing support')).not.toBeInTheDocument()
-    expect(
-      screen.queryByRole('button', { name: 'Chat' })
-    ).not.toBeInTheDocument()
-    expect(screen.queryByText('/v1/chat/completions')).not.toBeInTheDocument()
-    expect(localStorage.getItem('home_page_content')).toBeNull()
-    expect(router?.state.location.pathname).toBe('/')
+      const main = screen.getByRole('main')
+      expect(screen.getAllByRole('main')).toHaveLength(1)
+      expect(main).toHaveAttribute('id', 'main-content')
+      const account = within(main).getByRole('tabpanel', { name: 'Sign in' })
+      expect(within(account).getByLabelText('Username or Email')).toBeVisible()
+      expect(within(account).getByLabelText('Password')).toBeVisible()
+      expect(
+        within(account).getByRole('button', { name: 'Sign in' })
+      ).toBeEnabled()
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      expect(
+        screen.queryByText('upstream services integrated')
+      ).not.toBeInTheDocument()
+      expect(
+        screen.queryByText('model billing support')
+      ).not.toBeInTheDocument()
+      expect(
+        screen.queryByRole('button', { name: 'Chat' })
+      ).not.toBeInTheDocument()
+      expect(screen.queryByText('/v1/chat/completions')).not.toBeInTheDocument()
+      expect(localStorage.getItem('home_page_content')).toBeNull()
+      expect(router?.state.location.pathname).toBe('/')
 
-    expect(
-      within(screen.getByRole('banner')).getByRole('link', { name: 'hwjai' })
-    ).toHaveAttribute('href', '/')
-    const attribution = within(screen.getByRole('contentinfo')).getByRole(
-      'link',
-      { name: 'New API' }
-    )
-    expect(attribution).toHaveAttribute(
-      'href',
-      'https://github.com/QuantumNous/new-api'
-    )
-    expect(attribution).toHaveAttribute('rel', 'noopener noreferrer')
-    expect(
-      screen.getByRole('link', { name: 'Read the integration guide' })
-    ).toHaveAttribute('href', 'https://docs.newapi.pro')
-  })
+      expect(
+        within(screen.getByRole('banner')).getByRole('link', { name: 'hwjai' })
+      ).toHaveAttribute('href', '/')
+      const footer = screen.getByRole('contentinfo')
+      expect(
+        within(footer).queryByRole('link', { name: 'New API' })
+      ).not.toBeInTheDocument()
+      expect(footer).toHaveTextContent(`© ${new Date().getFullYear()} hwjai.`)
+      expect(footer).not.toHaveTextContent(
+        `© ${new Date().getFullYear()} New API`
+      )
+      expect(footer).not.toHaveTextContent('New API')
+      expect(footer).toHaveTextContent('QuantumNous')
+      expect(
+        screen.queryByRole('link', { name: 'Read the integration guide' })
+      ).not.toBeInTheDocument()
+    }
+  )
 
   test('mobile and desktop language controls translate the landing and real account form without losing input', async () => {
     const { user } = await renderHome()
@@ -256,7 +269,9 @@ describe('hwjai landing composition', () => {
     expect(screen.getByRole('tab', { name: '创建账户' })).toBeInTheDocument()
     expect(screen.getByLabelText('用户名或电子邮件')).toHaveValue('builder')
     expect(screen.getByLabelText('密码')).toBeVisible()
-    expect(screen.getByRole('link', { name: '阅读接入指南' })).toBeVisible()
+    expect(
+      screen.queryByRole('link', { name: '阅读接入指南' })
+    ).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: '探索模型' })).toBeVisible()
     expect(
       screen.queryByRole('heading', { name: 'Sign in to hwjai' })
@@ -279,28 +294,22 @@ describe('hwjai landing composition', () => {
     ).toBeVisible()
     expect(screen.getByLabelText('Username or Email')).toHaveValue('builder')
     expect(
-      screen.getByRole('link', { name: 'Read the integration guide' })
-    ).toBeVisible()
+      screen.queryByRole('link', { name: 'Read the integration guide' })
+    ).not.toBeInTheDocument()
     expect(
       screen.queryByRole('heading', { name: '登录 hwjai' })
     ).not.toBeInTheDocument()
     expect(router?.state.location.pathname).toBe('/')
   })
 
-  test('configured integration guidance stays external and model exploration navigates through the real router', async () => {
+  test('configured documentation does not restore the removed guide link and model exploration still navigates', async () => {
     const { user } = await renderHome({
       ...openRegistration,
       docs_link: 'https://guide.example.test/integration',
     })
-    const guide = screen.getByRole('link', {
-      name: 'Read the integration guide',
-    })
-    expect(guide).toHaveAttribute(
-      'href',
-      'https://guide.example.test/integration'
-    )
-    expect(guide).toHaveAttribute('target', '_blank')
-    expect(guide).toHaveAttribute('rel', 'noopener noreferrer')
+    expect(
+      screen.queryByRole('link', { name: 'Read the integration guide' })
+    ).not.toBeInTheDocument()
 
     const models = screen.getByRole('link', { name: 'Explore models' })
     expect(models).toHaveAttribute('href', '/market')

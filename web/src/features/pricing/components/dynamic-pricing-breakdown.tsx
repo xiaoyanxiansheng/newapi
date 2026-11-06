@@ -47,6 +47,10 @@ import {
 } from '../lib/billing-expr'
 
 type DynamicPricingBreakdownProps = {
+  /** Use price cards inside narrow table cells at every viewport width. */
+  stacked?: boolean
+  /** Verified upstream display units for the admin procurement preview. */
+  displayCurrency?: string
   billingExpr: string | null | undefined
   /**
    * Label of the tier that fired for the current request. When provided,
@@ -73,7 +77,7 @@ type DynamicPricingBreakdownProps = {
 const VAR_LABELS: Record<string, string> = {
   p: 'Input',
   c: 'Output',
-  len: 'Length',
+  len: 'Input context',
 }
 const OP_LABELS: Record<string, string> = {
   '<': '<',
@@ -169,16 +173,21 @@ function nextOccurrenceKey(
 
 export function DynamicPricingBreakdown({
   billingExpr,
+  displayCurrency,
   matchedTierLabel,
   requestRules,
   hideCacheColumns = false,
   compact = false,
+  stacked = false,
 }: DynamicPricingBreakdownProps) {
   const { t } = useTranslation()
   const expr = billingExpr || ''
   const currency = useSystemConfigStore((s) => s.config.currency)
 
   const { symbol, rate } = useMemo(() => {
+    if (displayCurrency) {
+      return { symbol: displayCurrency === 'CNY' ? '¥' : '$', rate: 1 }
+    }
     if (currency.quotaDisplayType === 'CNY') {
       return { symbol: '¥', rate: currency.usdExchangeRate || 7 }
     }
@@ -189,7 +198,7 @@ export function DynamicPricingBreakdown({
       }
     }
     return { symbol: '$', rate: 1 }
-  }, [currency])
+  }, [currency, displayCurrency])
 
   const { tiers, ruleGroups } = useMemo(() => {
     const split = splitBillingExprAndRequestRules(expr)
@@ -279,7 +288,21 @@ export function DynamicPricingBreakdown({
           >
             {t('Tiered price table')}
           </div>
-          <div className='space-y-1.5 sm:hidden'>
+          {tiers.some((tier) =>
+            tier.conditions.some((condition) => condition.var === 'len')
+          ) && (
+            <p className='text-muted-foreground mb-2 text-[10px] leading-relaxed'>
+              {t(
+                'Input context includes cached tokens. 1K = 1,000 tokens; the threshold selects the price tier for the whole request.'
+              )}
+            </p>
+          )}
+          <div
+            className={cn(
+              'hwjai-pricing-tier-cards space-y-1.5',
+              !stacked && 'sm:hidden'
+            )}
+          >
             {tiers.map((tier) => {
               const condSummary = formatConditionSummary(tier.conditions, t)
               const isMatched =
@@ -348,7 +371,10 @@ export function DynamicPricingBreakdown({
             })}
           </div>
           <StaticDataTable
-            className='hidden rounded-none border-0 sm:block'
+            className={cn(
+              'hidden rounded-none border-0',
+              !stacked && 'sm:block'
+            )}
             tableClassName={
               compact
                 ? '[&_td]:text-xs [&_td_*]:text-xs [&_th]:text-xs [&_th_*]:text-xs'

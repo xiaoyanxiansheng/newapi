@@ -26,6 +26,7 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
 import { API_KEY_ROUTES_QUERY_KEY } from '@/features/keys/constants'
+import { useAuthStore } from '@/stores/auth-store'
 
 import {
   MARKET_MODELS_QUERY_KEY,
@@ -53,12 +54,15 @@ export function useMarketModels(
 ) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
+  const user = useAuthStore((state) => state.auth.user)
 
   const query = useQuery({
-    queryKey: marketModelsQueryKey(tokenId),
+    queryKey: marketModelsQueryKey(tokenId, user),
     queryFn: () => getMarketModels(tokenId ?? undefined),
     placeholderData: keepPreviousData,
     enabled: options?.enabled ?? true,
+    refetchInterval: options?.enabled === false ? false : 60_000,
+    refetchOnWindowFocus: true,
   })
 
   const refreshModels = async () => {

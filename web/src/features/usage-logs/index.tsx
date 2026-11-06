@@ -23,8 +23,10 @@ import { useTranslation } from 'react-i18next'
 import { SectionPageLayout } from '@/components/layout'
 import type { NavGroup } from '@/components/layout/types'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { UsageSwitcher } from '@/features/dashboard/components/usage-switcher'
 import { CacheStatsDialog } from '@/features/system-settings/general/channel-affinity/cache-stats-dialog'
 import { useSidebarConfig } from '@/hooks/use-sidebar-config'
+import { useStatus } from '@/hooks/use-status'
 
 import { UserInfoDialog } from './components/dialogs/user-info-dialog'
 import {
@@ -57,6 +59,7 @@ const SECTION_META: Record<UsageLogsSectionId, { titleKey: string }> = {
 
 function UsageLogsContent() {
   const { t } = useTranslation()
+  const { status } = useStatus()
   const navigate = useNavigate()
   const params = route.useParams()
   const activeCategory: UsageLogsSectionId =
@@ -121,12 +124,24 @@ function UsageLogsContent() {
     activeCategory === 'common' ? SECTION_META.common : SECTION_META.task
   const showTaskSwitcher =
     activeCategory !== 'common' && visibleSections.length > 1
+  if (activeCategory === 'task' && status?.enable_task === false) {
+    return (
+      <SectionPageLayout>
+        <SectionPageLayout.Title>{t('Task Logs')}</SectionPageLayout.Title>
+        <SectionPageLayout.Content>
+          <p className='text-muted-foreground rounded-xl border p-5 text-sm'>
+            {t('Task logs are disabled by the administrator.')}
+          </p>
+        </SectionPageLayout.Content>
+      </SectionPageLayout>
+    )
+  }
 
   return (
     <>
       <SectionPageLayout fixedContent>
         <SectionPageLayout.Title>
-          {t(pageMeta.titleKey)}
+          {activeCategory === 'common' ? t('Usage') : t(pageMeta.titleKey)}
         </SectionPageLayout.Title>
         {canManageScope && (
           <SectionPageLayout.Actions>
@@ -140,6 +155,7 @@ function UsageLogsContent() {
         )}
         <SectionPageLayout.Content>
           <div className='flex h-full min-h-0 flex-col gap-4'>
+            {activeCategory === 'common' && <UsageSwitcher active='requests' />}
             {showTaskSwitcher && (
               <Tabs value={activeCategory} onValueChange={handleSectionChange}>
                 <TabsList className='max-w-full flex-wrap justify-start group-data-horizontal/tabs:h-auto'>

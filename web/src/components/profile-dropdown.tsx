@@ -104,13 +104,17 @@ export function ProfileDropdown() {
 
           <DropdownMenuItem onClick={() => navigate({ to: '/profile' })}>
             <User className='size-4' />
-            {t('Profile')}
+            {t('Account center')}
           </DropdownMenuItem>
 
           {isWalletVisible && (
-            <DropdownMenuItem onClick={() => navigate({ to: '/wallet' })}>
+            <DropdownMenuItem
+              onClick={() =>
+                navigate({ to: '/profile', search: { section: 'wallet' } })
+              }
+            >
               <Wallet className='size-4' />
-              {t('Wallet')}
+              {t('Balance and billing')}
             </DropdownMenuItem>
           )}
 

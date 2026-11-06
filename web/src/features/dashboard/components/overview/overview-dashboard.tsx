@@ -88,6 +88,8 @@ type DashboardActionPath =
   | '/channels'
   | '/usage-logs'
   | '/pricing'
+  | '/market'
+  | '/dashboard/$section'
 
 interface StartStep {
   title: string
@@ -101,6 +103,7 @@ interface QuickAction {
   title: string
   description: string
   to: DashboardActionPath
+  params?: { section: string }
   icon: LucideIcon
   adminOnly?: boolean
 }
@@ -422,7 +425,7 @@ function QuickActionItem(props: { action: QuickAction }) {
     <Button
       variant='outline'
       className='h-auto justify-start rounded-xl px-3 py-3 text-left'
-      render={<Link to={props.action.to} />}
+      render={<Link to={props.action.to} params={props.action.params} />}
     >
       <span className='bg-muted flex size-9 shrink-0 items-center justify-center rounded-lg'>
         <Icon className='size-4' aria-hidden='true' />
@@ -447,7 +450,7 @@ function CompactQuickAction(props: { action: QuickAction }) {
       variant='outline'
       size='sm'
       className='bg-background/70 h-8 min-w-24 gap-1.5 px-2.5'
-      render={<Link to={props.action.to} />}
+      render={<Link to={props.action.to} params={props.action.params} />}
     >
       <Icon data-icon='inline-start' />
       <span>{props.action.title}</span>
@@ -527,7 +530,7 @@ export function OverviewDashboard() {
   const quickActions = useMemo<QuickAction[]>(
     () => [
       {
-        title: t('API Keys'),
+        title: t('API Access'),
         description: t('Create a key for your app or service'),
         to: '/keys',
         icon: KeyRound,
@@ -540,15 +543,16 @@ export function OverviewDashboard() {
         adminOnly: true,
       },
       {
-        title: t('Usage Logs'),
+        title: t('Usage'),
         description: t('Inspect requests, errors, and billing details'),
-        to: '/usage-logs',
+        to: '/dashboard/$section',
+        params: { section: 'models' },
         icon: FileText,
       },
       {
-        title: t('Pricing'),
+        title: t('Model Plaza'),
         description: t('Review model rates before scaling traffic'),
-        to: '/pricing',
+        to: '/market',
         icon: BookOpen,
       },
     ],

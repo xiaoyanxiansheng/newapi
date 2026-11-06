@@ -137,6 +137,7 @@ Do NOT directly import or call `encoding/json` in business code. `json.RawMessag
 - Frontend UI text must support i18n with `i18next`/`react-i18next`. Use flat JSON locale files in `web/src/i18n/locales/{lang}.json`, with English source strings as keys.
 - In React components, use `useTranslation()` and call `t('English key')` for user-facing text.
 - Follow `web/AGENTS.md` for detailed frontend conventions, including TypeScript, component structure, styling, accessibility, testing, and build checks.
+- Upstream browser helper changes must preserve explicit domain access, reuse the existing read-only discovery function, and keep cookies and discovered Keys out of extension storage. See `docs/upstream-browser-helper.md` for packaging and the connection flow.
 
 ### Project Governance
 

@@ -101,11 +101,13 @@ export async function removeTokenRouteModel(
 export async function reorderTokenRoute(
   id: number,
   model: string,
-  channels: number[]
+  channels: number[],
+  listingIds?: number[]
 ): Promise<ApiResponse<TokenRoutesData>> {
   const res = await api.put(`/api/token/${id}/routes/order`, {
     model,
     channels,
+    ...(listingIds ? { listing_ids: listingIds } : {}),
   })
   return res.data
 }
